@@ -1,0 +1,18 @@
+{
+	"required": true,
+	"package": "willits.jhenry.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"mixins": [
+		"ExampleMixin"
+	],
+	"client": [
+		"RenderPipelinesAccessor",
+		"RenderTypeInvoker"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}
