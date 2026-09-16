@@ -98,6 +98,15 @@ public final class Persistence {
 			if (root.has("maxBlocksOverride")) {
 				MarkManager.config().maxBlocksOverride = root.get("maxBlocksOverride").getAsBoolean();
 			}
+			if (root.has("autoTool")) {
+				MiningSettings.setAutoTool(root.get("autoTool").getAsBoolean());
+			}
+			if (root.has("peek")) {
+				MiningSettings.setPeek(root.get("peek").getAsBoolean());
+			}
+			if (root.has("pauseOnDamage")) {
+				MiningSettings.setPauseOnDamage(root.get("pauseOnDamage").getAsBoolean());
+			}
 		} catch (Exception e) {
 			JHenry.LOGGER.error("JHenry: failed to load data for {}", uuid, e);
 		}
@@ -138,6 +147,9 @@ public final class Persistence {
 			root.addProperty("autoMine", MiningSettings.autoMineOres());
 			root.addProperty("maxBlocks", MarkManager.config().maxBlocks);
 			root.addProperty("maxBlocksOverride", MarkManager.config().maxBlocksOverride);
+			root.addProperty("autoTool", MiningSettings.autoTool());
+			root.addProperty("peek", MiningSettings.peek());
+			root.addProperty("pauseOnDamage", MiningSettings.pauseOnDamage());
 
 			try (Writer writer = Files.newBufferedWriter(file)) {
 				GSON.toJson(root, writer);

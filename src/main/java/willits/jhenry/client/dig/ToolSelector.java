@@ -4,6 +4,7 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
+import willits.jhenry.mapping.MiningSettings;
 
 public final class ToolSelector {
 
@@ -14,7 +15,7 @@ public final class ToolSelector {
 	}
 
 	public static void hold(LocalPlayer player, BlockState state) {
-		if (player == null || state == null || state.isAir()) {
+		if (player == null || state == null || state.isAir() || !MiningSettings.autoTool()) {
 			return;
 		}
 		int best = bestSlot(player, state);

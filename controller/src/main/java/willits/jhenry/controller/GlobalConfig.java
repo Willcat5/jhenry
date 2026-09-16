@@ -14,6 +14,9 @@ public final class GlobalConfig {
 
 	private static int maxBlocks = 100;
 	private static int soundVolume = 60;
+	private static boolean autoTool = true;
+	private static boolean peek = true;
+	private static boolean pauseOnDamage = true;
 	private static boolean loaded;
 
 	private GlobalConfig() {
@@ -45,6 +48,39 @@ public final class GlobalConfig {
 		return Math.max(50, Math.min(500, value));
 	}
 
+	public static synchronized boolean autoTool() {
+		ensureLoaded();
+		return autoTool;
+	}
+
+	public static synchronized void setAutoTool(boolean value) {
+		ensureLoaded();
+		autoTool = value;
+		save();
+	}
+
+	public static synchronized boolean peek() {
+		ensureLoaded();
+		return peek;
+	}
+
+	public static synchronized void setPeek(boolean value) {
+		ensureLoaded();
+		peek = value;
+		save();
+	}
+
+	public static synchronized boolean pauseOnDamage() {
+		ensureLoaded();
+		return pauseOnDamage;
+	}
+
+	public static synchronized void setPauseOnDamage(boolean value) {
+		ensureLoaded();
+		pauseOnDamage = value;
+		save();
+	}
+
 	private static void ensureLoaded() {
 		if (loaded) {
 			return;
@@ -54,6 +90,9 @@ public final class GlobalConfig {
 		if (data != null) {
 			maxBlocks = clampMaxBlocks(data.maxBlocks);
 			soundVolume = Math.max(0, Math.min(100, data.soundVolume));
+			autoTool = data.autoTool == null ? true : data.autoTool;
+			peek = data.peek == null ? true : data.peek;
+			pauseOnDamage = data.pauseOnDamage == null ? true : data.pauseOnDamage;
 		}
 	}
 
@@ -76,6 +115,9 @@ public final class GlobalConfig {
 			Data data = new Data();
 			data.maxBlocks = maxBlocks;
 			data.soundVolume = soundVolume;
+			data.autoTool = autoTool;
+			data.peek = peek;
+			data.pauseOnDamage = pauseOnDamage;
 			try (Writer writer = Files.newBufferedWriter(FILE)) {
 				GSON.toJson(data, writer);
 			}
@@ -87,5 +129,8 @@ public final class GlobalConfig {
 	private static final class Data {
 		int maxBlocks = 100;
 		int soundVolume = 60;
+		Boolean autoTool;
+		Boolean peek;
+		Boolean pauseOnDamage;
 	}
 }

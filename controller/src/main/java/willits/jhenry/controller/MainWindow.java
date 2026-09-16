@@ -4,8 +4,6 @@ import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.GridLayout;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -25,7 +23,6 @@ import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
-import javax.swing.JSlider;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 
@@ -96,27 +93,7 @@ public final class MainWindow extends JFrame {
 		panel.add(side("Map All", () -> commandAll("map")));
 		panel.add(Box.createVerticalStrut(12));
 		panel.add(side("Refresh", this::poll));
-		panel.add(Box.createVerticalStrut(12));
-
-		JLabel volumeLabel = new JLabel("Volume: " + GlobalConfig.soundVolume());
-		volumeLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-		panel.add(volumeLabel);
-		JSlider volume = new JSlider(0, 100, GlobalConfig.soundVolume());
-		volume.setFocusable(false);
-		volume.setAlignmentX(Component.LEFT_ALIGNMENT);
-		volume.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
-		volume.addChangeListener(e -> {
-			int value = volume.getValue();
-			SoundPlayer.setVolume(value);
-			volumeLabel.setText("Volume: " + value);
-		});
-		volume.addMouseListener(new MouseAdapter() {
-			@Override
-			public void mouseReleased(MouseEvent e) {
-				GlobalConfig.setSoundVolume(volume.getValue());
-			}
-		});
-		panel.add(volume);
+		panel.add(side("Settings", () -> SettingsWindow.open(this)));
 		panel.add(Box.createVerticalStrut(12));
 
 		JLabel oresLabel = new JLabel("Ores");
@@ -132,51 +109,6 @@ public final class MainWindow extends JFrame {
 		panel.add(Box.createVerticalStrut(4));
 		panel.add(new IconListPanel(ScaffoldConfig::enabled, ScaffoldConfig::add, ScaffoldConfig::remove,
 				this::pushSettings));
-		panel.add(Box.createVerticalStrut(4));
-
-		JButton autoMine = new JButton();
-		autoMine.setFocusPainted(false);
-		autoMine.setAlignmentX(Component.LEFT_ALIGNMENT);
-		autoMine.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
-		autoMine.setText("Auto-mine: " + (ScaffoldConfig.autoMine() ? "ON" : "OFF"));
-		autoMine.addActionListener(e -> {
-			SoundPlayer.play("click");
-			ScaffoldConfig.setAutoMine(!ScaffoldConfig.autoMine());
-			autoMine.setText("Auto-mine: " + (ScaffoldConfig.autoMine() ? "ON" : "OFF"));
-			pushSettings();
-		});
-		panel.add(autoMine);
-
-		JButton handleGravel = new JButton();
-		handleGravel.setFocusPainted(false);
-		handleGravel.setAlignmentX(Component.LEFT_ALIGNMENT);
-		handleGravel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
-		handleGravel.setText("Handle Gravel: " + (ScaffoldConfig.handleGravel() ? "ON" : "OFF"));
-		handleGravel.addActionListener(e -> {
-			SoundPlayer.play("click");
-			ScaffoldConfig.setHandleGravel(!ScaffoldConfig.handleGravel());
-			handleGravel.setText("Handle Gravel: " + (ScaffoldConfig.handleGravel() ? "ON" : "OFF"));
-			pushSettings();
-		});
-		panel.add(handleGravel);
-		panel.add(Box.createVerticalStrut(8));
-
-		JLabel maxBlocksLabel = new JLabel("Max Blocks: " + GlobalConfig.maxBlocks());
-		maxBlocksLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-		panel.add(maxBlocksLabel);
-		JSlider maxBlocks = new JSlider(50, 500, GlobalConfig.maxBlocks());
-		maxBlocks.setFocusable(false);
-		maxBlocks.setAlignmentX(Component.LEFT_ALIGNMENT);
-		maxBlocks.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
-		maxBlocks.addChangeListener(e -> maxBlocksLabel.setText("Max Blocks: " + maxBlocks.getValue()));
-		maxBlocks.addMouseListener(new MouseAdapter() {
-			@Override
-			public void mouseReleased(MouseEvent e) {
-				GlobalConfig.setMaxBlocks(maxBlocks.getValue());
-				pushSettings();
-			}
-		});
-		panel.add(maxBlocks);
 		return panel;
 	}
 
@@ -199,14 +131,17 @@ public final class MainWindow extends JFrame {
 		}
 	}
 
-	private void pushSettings() {
+	public void pushSettings() {
 		boolean autoMine = ScaffoldConfig.autoMine();
 		boolean handleGravel = ScaffoldConfig.handleGravel();
+		boolean autoTool = GlobalConfig.autoTool();
+		boolean peek = GlobalConfig.peek();
+		boolean pauseOnDamage = GlobalConfig.pauseOnDamage();
 		int maxBlocks = GlobalConfig.maxBlocks();
 		List<String> scaffolds = ScaffoldConfig.enabled();
 		for (BotConfig bot : bots) {
-			new Thread(() -> new BotClient(bot).sendSettings(autoMine, handleGravel, maxBlocks, scaffolds),
-					"jhenry-settings").start();
+			new Thread(() -> new BotClient(bot).sendSettings(autoMine, handleGravel, autoTool, peek, pauseOnDamage,
+					maxBlocks, scaffolds), "jhenry-settings").start();
 		}
 	}
 
@@ -216,6 +151,9 @@ public final class MainWindow extends JFrame {
 		}
 		return status.autoMine() != ScaffoldConfig.autoMine()
 				|| status.handleGravel() != ScaffoldConfig.handleGravel()
+				|| status.autoTool() != GlobalConfig.autoTool()
+				|| status.peek() != GlobalConfig.peek()
+				|| status.pauseOnDamage() != GlobalConfig.pauseOnDamage()
 				|| (!status.maxBlocksOverride() && status.maxBlocks() != GlobalConfig.maxBlocks())
 				|| !new HashSet<>(status.ores()).equals(new HashSet<>(OreConfig.enabled()))
 				|| !new HashSet<>(status.scaffolds()).equals(new HashSet<>(ScaffoldConfig.enabled()));
@@ -294,7 +232,7 @@ public final class MainWindow extends JFrame {
 				handleTransitions(card, previous, status);
 				if ((previous == null || !previous.online()) && status.online()) {
 					new Thread(() -> new BotClient(bot).sendFilter(OreConfig.enabled()), "jhenry-filter").start();
-					new Thread(() -> new BotClient(bot).sendSettings(ScaffoldConfig.autoMine(), ScaffoldConfig.handleGravel(), GlobalConfig.maxBlocks(),
+					new Thread(() -> new BotClient(bot).sendSettings(ScaffoldConfig.autoMine(), ScaffoldConfig.handleGravel(), GlobalConfig.autoTool(), GlobalConfig.peek(), GlobalConfig.pauseOnDamage(), GlobalConfig.maxBlocks(),
 							ScaffoldConfig.enabled()), "jhenry-settings").start();
 					BlockIds.fetchAsync(bots);
 				} else if (status.online() && settingsMismatch(status)) {
@@ -302,7 +240,7 @@ public final class MainWindow extends JFrame {
 					if (now - lastSettingsPush.getOrDefault(bot, 0L) > 5000L) {
 						lastSettingsPush.put(bot, now);
 						new Thread(() -> new BotClient(bot).sendFilter(OreConfig.enabled()), "jhenry-filter").start();
-						new Thread(() -> new BotClient(bot).sendSettings(ScaffoldConfig.autoMine(), ScaffoldConfig.handleGravel(), GlobalConfig.maxBlocks(),
+						new Thread(() -> new BotClient(bot).sendSettings(ScaffoldConfig.autoMine(), ScaffoldConfig.handleGravel(), GlobalConfig.autoTool(), GlobalConfig.peek(), GlobalConfig.pauseOnDamage(), GlobalConfig.maxBlocks(),
 								ScaffoldConfig.enabled()), "jhenry-settings").start();
 					}
 				}

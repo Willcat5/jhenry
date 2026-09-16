@@ -130,11 +130,14 @@ public final class ControlServer {
 			Boolean autoMine = request.has("autoMine") ? request.get("autoMine").getAsBoolean() : null;
 			Boolean handleGravel = request.has("handleGravel") ? request.get("handleGravel").getAsBoolean() : null;
 			Integer maxBlocks = request.has("maxBlocks") ? request.get("maxBlocks").getAsInt() : null;
+			Boolean autoTool = request.has("autoTool") ? request.get("autoTool").getAsBoolean() : null;
+			Boolean peek = request.has("peek") ? request.get("peek").getAsBoolean() : null;
+			Boolean pauseOnDamage = request.has("pauseOnDamage") ? request.get("pauseOnDamage").getAsBoolean() : null;
 			Boolean ok = onClientThread(() -> {
 				if ("filter".equals(action)) {
 					applyFilter(ores);
 				} else if ("settings".equals(action)) {
-					applySettings(scaffolds, autoMine, handleGravel, maxBlocks);
+					applySettings(scaffolds, autoMine, handleGravel, maxBlocks, autoTool, peek, pauseOnDamage);
 				} else {
 					execute(action);
 				}
@@ -297,7 +300,8 @@ public final class ControlServer {
 		Persistence.save();
 	}
 
-	private static void applySettings(JsonArray scaffolds, Boolean autoMine, Boolean handleGravel, Integer maxBlocks) {
+	private static void applySettings(JsonArray scaffolds, Boolean autoMine, Boolean handleGravel, Integer maxBlocks,
+			Boolean autoTool, Boolean peek, Boolean pauseOnDamage) {
 		if (scaffolds != null) {
 			List<Block> blocks = new ArrayList<>();
 			for (JsonElement element : scaffolds) {
@@ -316,6 +320,15 @@ public final class ControlServer {
 		}
 		if (maxBlocks != null && !MarkManager.config().maxBlocksOverride) {
 			MarkManager.config().maxBlocks = maxBlocks;
+		}
+		if (autoTool != null) {
+			MiningSettings.setAutoTool(autoTool);
+		}
+		if (peek != null) {
+			MiningSettings.setPeek(peek);
+		}
+		if (pauseOnDamage != null) {
+			MiningSettings.setPauseOnDamage(pauseOnDamage);
 		}
 		Persistence.save();
 	}
@@ -376,6 +389,9 @@ public final class ControlServer {
 		status.addProperty("handleGravel", MarkManager.config().handleGravel);
 		status.addProperty("maxBlocks", MarkManager.config().maxBlocks);
 		status.addProperty("maxBlocksOverride", MarkManager.config().maxBlocksOverride);
+		status.addProperty("autoTool", MiningSettings.autoTool());
+		status.addProperty("peek", MiningSettings.peek());
+		status.addProperty("pauseOnDamage", MiningSettings.pauseOnDamage());
 		JsonArray ores = new JsonArray();
 		for (Block block : OreFilter.enabled()) {
 			ores.add(OreFilter.idOf(block).toString());

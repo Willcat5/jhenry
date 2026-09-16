@@ -41,6 +41,7 @@ public class JHenryClient implements ClientModInitializer {
 
 	private static java.util.UUID lastUuid;
 	private static int saveTimer;
+	private static int lastHurtTime;
 
 	@Override
 	public void onInitializeClient() {
@@ -66,8 +67,14 @@ public class JHenryClient implements ClientModInitializer {
 				java.util.UUID uuid = client.player.getUUID();
 				if (!uuid.equals(lastUuid)) {
 					lastUuid = uuid;
+					lastHurtTime = 0;
 					Persistence.load(uuid);
 				}
+				int hurt = client.player.hurtTime;
+				if (hurt > 0 && lastHurtTime == 0) {
+					TunnelDigger.notifyDamage();
+				}
+				lastHurtTime = hurt;
 				saveTimer++;
 				if (saveTimer >= 400) {
 					saveTimer = 0;

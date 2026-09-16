@@ -15,6 +15,8 @@ import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.item.FallingBlockEntity;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
@@ -49,6 +51,7 @@ public final class TunnelDigger {
 	private static final int ORE_STALL_LIMIT = 200;
 	private static final int GRAVEL_STALL_LIMIT = 200;
 	private static final int PEEK_STALL_LIMIT = 200;
+	private static final int PLACEMENT_WAIT_LIMIT = 60;
 	private static final int[][] RING_ORDER = {
 			{-1, 0}, {-1, 1}, {0, 1}, {1, 1}, {1, 0}, {1, -1}, {0, -1}, {-1, -1}
 	};
@@ -130,6 +133,9 @@ public final class TunnelDigger {
 	private static Block peekLastBlock;
 	private static int peekSavedSlot = -1;
 
+	private static int placementWaits;
+	private static boolean placementRefillPending;
+
 	private TunnelDigger() {
 	}
 
@@ -182,6 +188,8 @@ public final class TunnelDigger {
 		resetOreTask();
 		resetGravelTask();
 		resetPeekTask();
+		placementWaits = 0;
+		placementRefillPending = false;
 		peekTargets = buildPeekTargets(plan);
 		mode = Mode.RUNNING;
 	}
@@ -193,6 +201,8 @@ public final class TunnelDigger {
 		resetOreTask();
 		resetGravelTask();
 		resetPeekTask();
+		placementWaits = 0;
+		placementRefillPending = false;
 		mode = Mode.IDLE;
 		runs = null;
 		runIndex = 0;
@@ -862,7 +872,9 @@ public final class TunnelDigger {
 		}
 
 		if (!selectPlacementSlot(player)) {
-			fail("no placement block in hotbar");
+			if (++placementWaits > PLACEMENT_WAIT_LIMIT) {
+				fail("no placement block available");
+			}
 			return;
 		}
 
@@ -1061,7 +1073,9 @@ public final class TunnelDigger {
 		}
 
 		if (!selectPlacementSlot(player)) {
-			fail("no placement block in hotbar");
+			if (++placementWaits > PLACEMENT_WAIT_LIMIT) {
+				fail("no placement block available");
+			}
 			return;
 		}
 
@@ -1150,7 +1164,7 @@ public final class TunnelDigger {
 	private static List<BlockPos> buildPeekTargets(TunnelPlan plan) {
 		List<BlockPos> targets = new ArrayList<>();
 		Minecraft client = Minecraft.getInstance();
-		if (client.level == null) {
+		if (client.level == null || !MiningSettings.peek()) {
 			return targets;
 		}
 		List<BlockPos> candidates = new ArrayList<>();
@@ -1196,7 +1210,7 @@ public final class TunnelDigger {
 	}
 
 	private static boolean hasPlacement(LocalPlayer player) {
-		for (int slot = 0; slot < 9; slot++) {
+		for (int slot = 0; slot < 36; slot++) {
 			if (ScaffoldFilter.isPlacement(player.getInventory().getItem(slot))) {
 				return true;
 			}
@@ -1327,7 +1341,9 @@ public final class TunnelDigger {
 			return;
 		}
 		if (!selectPlacementSlot(player)) {
-			endPeekTask(player);
+			if (++placementWaits > PLACEMENT_WAIT_LIMIT) {
+				endPeekTask(player);
+			}
 			return;
 		}
 		if (!BlockPlacer.isPlacing() || !peekTarget.equals(BlockPlacer.target())) {
@@ -1386,15 +1402,54 @@ public final class TunnelDigger {
 
 	private static boolean selectPlacementSlot(LocalPlayer player) {
 		if (ScaffoldFilter.isPlacement(player.getInventory().getSelectedItem())) {
+			placementRefillPending = false;
+			placementWaits = 0;
 			return true;
 		}
 		for (int slot = 0; slot < 9; slot++) {
 			if (ScaffoldFilter.isPlacement(player.getInventory().getItem(slot))) {
 				player.getInventory().setSelectedSlot(slot);
+				placementRefillPending = false;
+				placementWaits = 0;
 				return true;
 			}
 		}
+		attemptPlacementRefill(player);
 		return false;
+	}
+
+	private static void attemptPlacementRefill(LocalPlayer player) {
+		if (placementRefillPending) {
+			return;
+		}
+		Minecraft client = Minecraft.getInstance();
+		if (client.gameMode == null) {
+			return;
+		}
+		Inventory inventory = player.getInventory();
+		int source = -1;
+		for (int slot = 9; slot < 36; slot++) {
+			if (ScaffoldFilter.isPlacement(inventory.getItem(slot))) {
+				source = slot;
+				break;
+			}
+		}
+		if (source < 0) {
+			return;
+		}
+		int target = -1;
+		for (int slot = 0; slot < 9; slot++) {
+			if (inventory.getItem(slot).isEmpty()) {
+				target = slot;
+				break;
+			}
+		}
+		if (target < 0) {
+			return;
+		}
+		client.gameMode.handleInventoryMouseClick(player.inventoryMenu.containerId, source, target,
+				ClickType.SWAP, player);
+		placementRefillPending = true;
 	}
 
 	public static String lastError() {
@@ -1590,6 +1645,17 @@ public final class TunnelDigger {
 
 	public static boolean isRunning() {
 		return mode == Mode.RUNNING;
+	}
+
+	public static void notifyDamage() {
+		if (!MiningSettings.pauseOnDamage()) {
+			return;
+		}
+		if (mode == Mode.RUNNING) {
+			pause("took damage");
+		} else {
+			message("JHenry: took damage");
+		}
 	}
 
 	public static String modeName() {
