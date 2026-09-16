@@ -20,4 +20,13 @@ public enum StopReason {
 	public String label() {
 		return this.label;
 	}
+
+	public boolean isHazard() {
+		return this == INVALID_HAZARD
+				|| this == FALLING_BLOCK
+				|| this == UNBREAKABLE
+				|| this == SIDESTEP_BLOCKED
+				|| this == RETURN_BLOCKED
+				|| this == NO_VALID_LENGTH;
+	}
 }

@@ -17,7 +17,6 @@ import willits.jhenry.mapping.MarkManager;
 import willits.jhenry.mapping.OreFilter;
 import willits.jhenry.mapping.PlannedCell;
 import willits.jhenry.mapping.Segment;
-import willits.jhenry.mapping.StopReason;
 import willits.jhenry.mapping.TunnelPlan;
 
 public final class PlanRenderer {
@@ -59,7 +58,7 @@ public final class PlanRenderer {
 
 			BlockPos stop = plan.stopPos();
 			if (stop != null) {
-				int color = isHazard(plan.stopReason()) ? COLOR_STOP : COLOR_END;
+				int color = plan.stopReason().isHazard() ? COLOR_STOP : COLOR_END;
 				renderBox(pose, buffer, camera, stop, color, config.lineWidth, STOP_SHAPE);
 			}
 
@@ -89,14 +88,5 @@ public final class PlanRenderer {
 			case RETURN -> COLOR_RETURN;
 			case RECONNECT -> COLOR_RECONNECT;
 		};
-	}
-
-	private static boolean isHazard(StopReason reason) {
-		return reason == StopReason.INVALID_HAZARD
-				|| reason == StopReason.FALLING_BLOCK
-				|| reason == StopReason.UNBREAKABLE
-				|| reason == StopReason.SIDESTEP_BLOCKED
-				|| reason == StopReason.RETURN_BLOCKED
-				|| reason == StopReason.NO_VALID_LENGTH;
 	}
 }

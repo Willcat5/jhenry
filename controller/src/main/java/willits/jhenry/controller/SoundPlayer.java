@@ -10,6 +10,7 @@ import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.Clip;
+import javax.sound.sampled.FloatControl;
 
 public final class SoundPlayer {
 
@@ -17,13 +18,13 @@ public final class SoundPlayer {
 
 	private static final Map<String, URL> URLS = new HashMap<>();
 	private static final Map<String, List<Clip>> POOLS = new HashMap<>();
-	private static boolean muted;
+	private static int volume = 60;
 
 	private SoundPlayer() {
 	}
 
 	public static void play(String name) {
-		if (muted) {
+		if (volume <= 0) {
 			return;
 		}
 		try {
@@ -95,19 +96,37 @@ public final class SoundPlayer {
 				clip.close();
 				return null;
 			}
+			applyGain(clip);
 			return clip;
 		}
 	}
 
-	public static boolean isMuted() {
-		return muted;
+	public static synchronized int volume() {
+		return volume;
 	}
 
-	public static void setMuted(boolean value) {
-		muted = value;
+	public static synchronized void setVolume(int percent) {
+		volume = Math.max(0, Math.min(100, percent));
+		for (List<Clip> pool : POOLS.values()) {
+			for (Clip clip : pool) {
+				applyGain(clip);
+			}
+		}
 	}
 
-	public static void toggleMuted() {
-		muted = !muted;
+	private static void applyGain(Clip clip) {
+		if (!clip.isControlSupported(FloatControl.Type.MASTER_GAIN)) {
+			return;
+		}
+		FloatControl gain = (FloatControl) clip.getControl(FloatControl.Type.MASTER_GAIN);
+		float min = gain.getMinimum();
+		float max = gain.getMaximum();
+		float value;
+		if (volume <= 0) {
+			value = min;
+		} else {
+			value = (float) (20.0D * Math.log10(volume / 100.0D));
+		}
+		gain.setValue(Math.max(min, Math.min(max, value)));
 	}
 }

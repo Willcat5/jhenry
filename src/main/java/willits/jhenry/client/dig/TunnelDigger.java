@@ -4,6 +4,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -13,14 +14,20 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
+import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import willits.jhenry.client.look.LookController;
+import willits.jhenry.mapping.BlockSafety;
+import willits.jhenry.mapping.GravelSafety;
 import willits.jhenry.mapping.MarkManager;
 import willits.jhenry.mapping.MiningSettings;
 import willits.jhenry.mapping.OreFilter;
@@ -40,6 +47,8 @@ public final class TunnelDigger {
 	private static final int VEIN_CAP = 512;
 	private static final int ORE_CYCLE_SLICES = 3;
 	private static final int ORE_STALL_LIMIT = 200;
+	private static final int GRAVEL_STALL_LIMIT = 200;
+	private static final int PEEK_STALL_LIMIT = 200;
 	private static final int[][] RING_ORDER = {
 			{-1, 0}, {-1, 1}, {0, 1}, {1, 1}, {1, 0}, {1, -1}, {0, -1}, {-1, -1}
 	};
@@ -55,6 +64,19 @@ public final class TunnelDigger {
 	private enum OrePhase {
 		NONE,
 		REPOSITION,
+		MINE,
+		PLACE
+	}
+
+	private enum GravelPhase {
+		NONE,
+		SCAN,
+		DIG,
+		CAP
+	}
+
+	private enum PeekPhase {
+		NONE,
 		MINE,
 		PLACE
 	}
@@ -90,6 +112,23 @@ public final class TunnelDigger {
 	private static final Set<BlockPos> oreOccluders = new HashSet<>();
 	private static final Set<BlockPos> oreMined = new HashSet<>();
 	private static int oreSavedSlot = -1;
+
+	private static GravelPhase gravelPhase = GravelPhase.NONE;
+	private static BlockPos gravelPath;
+	private static Direction gravelDir;
+	private static int gravelDigStall;
+	private static int gravelSafetyTimer;
+	private static Block gravelLastBlock;
+	private static int gravelSavedSlot = -1;
+	private static final Set<BlockPos> gravelAir = new HashSet<>();
+
+	private static PeekPhase peekPhase = PeekPhase.NONE;
+	private static BlockPos peekTarget;
+	private static List<BlockPos> peekTargets;
+	private static final Set<BlockPos> peekDone = new HashSet<>();
+	private static int peekStall;
+	private static Block peekLastBlock;
+	private static int peekSavedSlot = -1;
 
 	private TunnelDigger() {
 	}
@@ -141,6 +180,9 @@ public final class TunnelDigger {
 		planCells = new ArrayList<>(digCells);
 		currentTarget = null;
 		resetOreTask();
+		resetGravelTask();
+		resetPeekTask();
+		peekTargets = buildPeekTargets(plan);
 		mode = Mode.RUNNING;
 	}
 
@@ -149,6 +191,8 @@ public final class TunnelDigger {
 		MoveController.stop();
 		LookController.stop();
 		resetOreTask();
+		resetGravelTask();
+		resetPeekTask();
 		mode = Mode.IDLE;
 		runs = null;
 		runIndex = 0;
@@ -175,6 +219,16 @@ public final class TunnelDigger {
 
 		if (orePhase != OrePhase.NONE) {
 			tickOreTask(client, player);
+			return;
+		}
+
+		if (gravelPhase != GravelPhase.NONE) {
+			tickGravelTask(client, player);
+			return;
+		}
+
+		if (peekPhase != PeekPhase.NONE) {
+			tickPeekTask(client, player);
 			return;
 		}
 
@@ -213,6 +267,10 @@ public final class TunnelDigger {
 			}
 		}
 
+		if (peekPhase == PeekPhase.NONE && startPeekOpportunity(client, player)) {
+			return;
+		}
+
 		BlockPos nearest = null;
 		BlockPos furthest = null;
 		for (BlockPos cell : run.cells()) {
@@ -227,6 +285,11 @@ public final class TunnelDigger {
 		if (furthest != null) {
 			currentTarget = nearest;
 
+			if (MarkManager.config().handleGravel && isGravelColumn(client, nearest)) {
+				approachGravel(client, player, run, nearest);
+				return;
+			}
+
 			if (!nearest.equals(lastCheckedTarget)) {
 				lastCheckedTarget = nearest.immutable();
 				String danger = dangerAt(client.level, nearest, run.dir().getOpposite());
@@ -240,6 +303,8 @@ public final class TunnelDigger {
 				aimLocked = true;
 				aimTarget = furthest;
 			}
+
+			ToolSelector.hold(player, client.level.getBlockState(nearest));
 
 			BlockPos target = aimLocked && aimTarget != null ? aimTarget : nearest;
 			aimAt(player, target);
@@ -387,8 +452,11 @@ public final class TunnelDigger {
 	private static void finish() {
 		MoveController.stop();
 		BlockBreaker.stop();
+		resetGravelTask();
+		resetPeekTask();
 		if (lastPlan != null) {
 			MarkManager.plans().remove(lastPlan);
+			lastPlan = null;
 		}
 		mode = Mode.DONE;
 		message("JHenry: tunnel complete");
@@ -405,9 +473,11 @@ public final class TunnelDigger {
 		BlockBreaker.stop();
 		MoveController.stop();
 		BlockPlacer.stop();
+		resetGravelTask();
+		resetPeekTask();
 		mode = Mode.PAUSED;
 		lastError = reason;
-		message("JHenry: paused - " + reason + " (mine it, then resume)");
+		message("JHenry: paused - " + reason);
 	}
 
 	private static void checkOreExposure(Minecraft client, BlockPos cell, Direction dir) {
@@ -450,6 +520,10 @@ public final class TunnelDigger {
 			}
 			mineable.add(ore);
 		}
+		if (mineable.size() < vein.size()) {
+			pause("ore vein extends past tunnel [" + veinOres(client, vein) + "]");
+			return;
+		}
 		if (mineable.isEmpty()) {
 			return;
 		}
@@ -487,6 +561,21 @@ public final class TunnelDigger {
 				}
 			}
 		}
+	}
+
+	private static String veinOres(Minecraft client, List<BlockPos> vein) {
+		Set<Block> types = new LinkedHashSet<>();
+		for (BlockPos ore : vein) {
+			types.add(client.level.getBlockState(ore).getBlock());
+		}
+		StringBuilder message = new StringBuilder();
+		for (Block type : types) {
+			if (message.length() > 0) {
+				message.append("/");
+			}
+			message.append(type.getName().getString());
+		}
+		return message.toString();
 	}
 
 	private static List<BlockPos> perpendicularEdges(BlockPos center, Direction dir) {
@@ -670,7 +759,7 @@ public final class TunnelDigger {
 		if (!LookController.isActive() && client.hitResult != null
 				&& client.hitResult.getType() == HitResult.Type.BLOCK) {
 			BlockPos hitPos = ((BlockHitResult) client.hitResult).getBlockPos();
-			if (!hitPos.equals(cell) && inScope(hitPos)) {
+			if (!hitPos.equals(cell) && inScope(hitPos) && !client.level.getBlockState(hitPos).isAir()) {
 				effective = hitPos.immutable();
 			}
 		}
@@ -817,6 +906,470 @@ public final class TunnelDigger {
 		orePlaceIndex = 0;
 		oreMineStall = 0;
 		oreMineLastTarget = null;
+	}
+
+	private static void approachGravel(Minecraft client, LocalPlayer player, Run run, BlockPos path) {
+		if (!isAdjacent(player.blockPosition(), path)) {
+			BlockBreaker.releaseAttack();
+			BlockPos staging = path.relative(run.dir().getOpposite());
+			if (!MoveController.atTarget(player, staging) && !MoveController.isMoving()) {
+				MoveController.moveTo(staging);
+			}
+			return;
+		}
+		startGravelTask(path, run.dir());
+	}
+
+	private static boolean isGravelColumn(Minecraft client, BlockPos cell) {
+		if (client.level.getBlockState(cell).getBlock() instanceof FallingBlock) {
+			return true;
+		}
+		if (!client.level.isLoaded(cell.above())) {
+			return false;
+		}
+		return client.level.getBlockState(cell.above()).getBlock() instanceof FallingBlock;
+	}
+
+	private static void startGravelTask(BlockPos path, Direction dir) {
+		LocalPlayer player = Minecraft.getInstance().player;
+		if (player != null) {
+			gravelSavedSlot = player.getInventory().getSelectedSlot();
+		}
+		gravelPath = path.immutable();
+		gravelDir = dir;
+		gravelDigStall = 0;
+		gravelSafetyTimer = 0;
+		gravelLastBlock = null;
+		gravelPhase = GravelPhase.SCAN;
+		BlockBreaker.stop();
+		MoveController.stop();
+		LookController.stop();
+	}
+
+	private static void tickGravelTask(Minecraft client, LocalPlayer player) {
+		switch (gravelPhase) {
+			case SCAN -> gravelScan(client, player);
+			case DIG -> tickGravelDig(client, player);
+			case CAP -> tickGravelCap(client, player);
+			default -> {
+			}
+		}
+	}
+
+	private static void gravelScan(Minecraft client, LocalPlayer player) {
+		if (gravelPath == null || !client.level.isLoaded(gravelPath)) {
+			endGravelColumn(client);
+			return;
+		}
+
+		String safety = checkSafety(player);
+		if (safety != null) {
+			fail(safety);
+			return;
+		}
+
+		boolean pathFalling = client.level.getBlockState(gravelPath).getBlock() instanceof FallingBlock;
+		BlockPos above = gravelPath.above();
+		boolean aboveFalling = client.level.isLoaded(above)
+				&& client.level.getBlockState(above).getBlock() instanceof FallingBlock;
+		if (!pathFalling && !aboveFalling) {
+			endGravelColumn(client);
+			return;
+		}
+
+		GravelSafety.Result result = GravelSafety.scan(client.level, gravelPath, gravelAllowedAir(client, player));
+		if (result.verdict() != BlockSafety.Verdict.SAFE) {
+			pause("gravel pocket " + result.detail());
+			return;
+		}
+
+		gravelLastBlock = null;
+		gravelDigStall = 0;
+		gravelSafetyTimer = 0;
+		gravelPhase = GravelPhase.DIG;
+	}
+
+	private static void tickGravelDig(Minecraft client, LocalPlayer player) {
+		if (gravelPath == null || !client.level.isLoaded(gravelPath)) {
+			endGravelColumn(client);
+			return;
+		}
+
+		if (++gravelSafetyTimer >= MINE_CHECK_INTERVAL) {
+			gravelSafetyTimer = 0;
+			String safety = checkSafety(player);
+			if (safety != null) {
+				fail(safety);
+				return;
+			}
+		}
+
+		BlockState state = client.level.getBlockState(gravelPath);
+		Block current = state.getBlock();
+		if (current != gravelLastBlock) {
+			gravelLastBlock = current;
+			gravelDigStall = 0;
+		} else if (++gravelDigStall > GRAVEL_STALL_LIMIT) {
+			fail("gravel blocked at " + gravelPath.toShortString());
+			return;
+		}
+
+		if (state.isAir()) {
+			BlockPos above = gravelPath.above();
+			boolean aboveFalling = client.level.isLoaded(above)
+					&& client.level.getBlockState(above).getBlock() instanceof FallingBlock;
+			BlockBreaker.stop();
+			if (!aboveFalling && !gravelFallingNear(client, gravelPath)) {
+				recordGravelShaft(client);
+				gravelPhase = GravelPhase.CAP;
+			}
+			return;
+		}
+
+		if (!state.getFluidState().isEmpty()) {
+			fail("gravel exposed fluid at " + gravelPath.toShortString());
+			return;
+		}
+		if (state.getDestroySpeed(client.level, gravelPath) < 0.0F) {
+			fail("gravel blocked by unbreakable at " + gravelPath.toShortString());
+			return;
+		}
+
+		if (BlockBreaker.target() == null || !BlockBreaker.target().equals(gravelPath)) {
+			BlockBreaker.breakBlock(gravelPath);
+		}
+	}
+
+	private static void tickGravelCap(Minecraft client, LocalPlayer player) {
+		if (gravelPath == null || !client.level.isLoaded(gravelPath)) {
+			endGravelColumn(client);
+			return;
+		}
+
+		if (!isAdjacent(player.blockPosition(), gravelPath)) {
+			BlockPos staging = gravelPath.relative(gravelDir != null ? gravelDir.getOpposite() : Direction.UP);
+			if (!MoveController.atTarget(player, staging) && !MoveController.isMoving()) {
+				MoveController.moveTo(staging);
+			}
+			return;
+		}
+
+		BlockPos cap = gravelPath.above();
+		if (!client.level.getBlockState(cap).isAir()) {
+			endGravelColumn(client);
+			return;
+		}
+
+		if (!selectPlacementSlot(player)) {
+			fail("no placement block in hotbar");
+			return;
+		}
+
+		if (!BlockPlacer.isPlacing() || !cap.equals(BlockPlacer.target())) {
+			BlockPlacer.place(cap);
+		}
+
+		BlockPlacer.Status status = BlockPlacer.tick();
+		if (status == BlockPlacer.Status.DONE) {
+			endGravelColumn(client);
+		} else if (status == BlockPlacer.Status.FAILED) {
+			fail("could not cap gravel at " + cap.toShortString());
+		}
+	}
+
+	private static boolean gravelFallingNear(Minecraft client, BlockPos path) {
+		AABB box = new AABB(
+				path.getX() - 1.0D, path.getY() - 1.0D, path.getZ() - 1.0D,
+				path.getX() + 2.0D, path.getY() + 4.0D, path.getZ() + 2.0D);
+		return !client.level.getEntitiesOfClass(FallingBlockEntity.class, box).isEmpty();
+	}
+
+	private static void recordGravelShaft(Minecraft client) {
+		if (gravelPath == null || client.level == null) {
+			return;
+		}
+		gravelAir.add(gravelPath);
+		BlockPos up = gravelPath.above();
+		while (client.level.isLoaded(up) && client.level.getBlockState(up).isAir()) {
+			gravelAir.add(up.immutable());
+			up = up.above();
+		}
+	}
+
+	private static void endGravelColumn(Minecraft client) {
+		BlockBreaker.stop();
+		BlockPlacer.stop();
+		MoveController.stop();
+		LookController.stop();
+		selectGravelTool();
+		gravelSavedSlot = -1;
+		recordGravelShaft(client);
+		gravelPhase = GravelPhase.NONE;
+		gravelPath = null;
+		gravelDir = null;
+		gravelDigStall = 0;
+		gravelSafetyTimer = 0;
+		gravelLastBlock = null;
+	}
+
+	private static void resetGravelTask() {
+		BlockPlacer.stop();
+		selectGravelTool();
+		gravelSavedSlot = -1;
+		gravelPhase = GravelPhase.NONE;
+		gravelPath = null;
+		gravelDir = null;
+		gravelDigStall = 0;
+		gravelSafetyTimer = 0;
+		gravelLastBlock = null;
+		gravelAir.clear();
+	}
+
+	private static Set<BlockPos> gravelAllowedAir(Minecraft client, LocalPlayer player) {
+		Set<BlockPos> allowed = new HashSet<>(gravelAir);
+		if (planCells != null) {
+			for (BlockPos cell : planCells) {
+				if (client.level.isLoaded(cell) && client.level.getBlockState(cell).isAir()) {
+					allowed.add(cell);
+				}
+			}
+		}
+		if (player != null) {
+			allowed.add(player.blockPosition());
+		}
+		return allowed;
+	}
+
+	private static void selectGravelTool() {
+		LocalPlayer player = Minecraft.getInstance().player;
+		if (player != null && gravelSavedSlot >= 0) {
+			player.getInventory().setSelectedSlot(gravelSavedSlot);
+		}
+	}
+
+	private static List<BlockPos> buildPeekTargets(TunnelPlan plan) {
+		List<BlockPos> targets = new ArrayList<>();
+		Minecraft client = Minecraft.getInstance();
+		if (client.level == null) {
+			return targets;
+		}
+		List<BlockPos> candidates = new ArrayList<>();
+		if (plan.stopPos() != null && plan.stopReason().isHazard()) {
+			candidates.add(plan.stopPos());
+		}
+		if (plan.returnStopPos() != null) {
+			candidates.add(plan.returnStopPos());
+		}
+		for (BlockPos pos : candidates) {
+			if (peekEligible(client.level, pos) && !targets.contains(pos)) {
+				targets.add(pos.immutable());
+			}
+		}
+		return targets;
+	}
+
+	private static boolean peekEligible(Level level, BlockPos pos) {
+		if (!level.isLoaded(pos)) {
+			return false;
+		}
+		BlockState state = level.getBlockState(pos);
+		if (state.isAir() || !state.getFluidState().isEmpty()) {
+			return false;
+		}
+		if (state.getDestroySpeed(level, pos) < 0.0F) {
+			return false;
+		}
+		for (Direction dir : Direction.values()) {
+			BlockPos neighbor = pos.relative(dir);
+			if (!level.isLoaded(neighbor)) {
+				continue;
+			}
+			if (!level.getBlockState(neighbor).isAir()) {
+				continue;
+			}
+			if (planCells != null && planCells.contains(neighbor)) {
+				continue;
+			}
+			return true;
+		}
+		return false;
+	}
+
+	private static boolean hasPlacement(LocalPlayer player) {
+		for (int slot = 0; slot < 9; slot++) {
+			if (ScaffoldFilter.isPlacement(player.getInventory().getItem(slot))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean startPeekOpportunity(Minecraft client, LocalPlayer player) {
+		if (peekTargets == null || peekTargets.isEmpty()) {
+			return false;
+		}
+		for (BlockPos target : peekTargets) {
+			if (peekDone.contains(target)) {
+				continue;
+			}
+			if (!peekEligible(client.level, target)) {
+				peekDone.add(target);
+				continue;
+			}
+			if (!withinReach(player, target) || !canTarget(client, player, target)) {
+				continue;
+			}
+			if (!hasPlacement(player)) {
+				peekDone.add(target);
+				continue;
+			}
+			startPeekTask(player, target);
+			return true;
+		}
+		return false;
+	}
+
+	private static boolean withinReach(LocalPlayer player, BlockPos target) {
+		return player.getEyePosition().distanceToSqr(Vec3.atCenterOf(target)) <= 16.0D;
+	}
+
+	private static boolean canTarget(Minecraft client, LocalPlayer player, BlockPos target) {
+		Vec3 eye = player.getEyePosition();
+		BlockHitResult hit = client.level.clip(new ClipContext(eye, Vec3.atCenterOf(target),
+				ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player));
+		return hit.getType() == HitResult.Type.BLOCK && hit.getBlockPos().equals(target);
+	}
+
+	private static BlockPos adjacentPlanCell(BlockPos target) {
+		if (planCells == null) {
+			return null;
+		}
+		for (Direction dir : Direction.values()) {
+			BlockPos neighbor = target.relative(dir);
+			if (planCells.contains(neighbor)) {
+				return neighbor;
+			}
+		}
+		return null;
+	}
+
+	private static void startPeekTask(LocalPlayer player, BlockPos target) {
+		if (player != null) {
+			peekSavedSlot = player.getInventory().getSelectedSlot();
+		}
+		peekTarget = target.immutable();
+		peekStall = 0;
+		peekLastBlock = null;
+		peekPhase = PeekPhase.MINE;
+		BlockBreaker.stop();
+		LookController.stop();
+		BlockPos approach = adjacentPlanCell(peekTarget);
+		if (player != null && approach != null && !MoveController.atTarget(player, approach)) {
+			MoveController.moveTo(approach);
+		}
+	}
+
+	private static void tickPeekTask(Minecraft client, LocalPlayer player) {
+		switch (peekPhase) {
+			case MINE -> tickPeekMine(client, player);
+			case PLACE -> tickPeekPlace(client, player);
+			default -> {
+			}
+		}
+	}
+
+	private static void tickPeekMine(Minecraft client, LocalPlayer player) {
+		if (peekTarget == null || !client.level.isLoaded(peekTarget)) {
+			endPeekTask(player);
+			return;
+		}
+		BlockState state = client.level.getBlockState(peekTarget);
+		Block current = state.getBlock();
+		if (current != peekLastBlock) {
+			peekLastBlock = current;
+			peekStall = 0;
+		} else if (++peekStall > PEEK_STALL_LIMIT) {
+			endPeekTask(player);
+			return;
+		}
+
+		if (state.isAir()) {
+			BlockBreaker.stop();
+			MoveController.stop();
+			peekPhase = PeekPhase.PLACE;
+			return;
+		}
+
+		if (!state.getFluidState().isEmpty() || state.getDestroySpeed(client.level, peekTarget) < 0.0F) {
+			endPeekTask(player);
+			return;
+		}
+
+		if (BlockBreaker.target() == null || !BlockBreaker.target().equals(peekTarget)) {
+			BlockBreaker.breakBlock(peekTarget);
+		}
+	}
+
+	private static void tickPeekPlace(Minecraft client, LocalPlayer player) {
+		if (peekTarget == null || !client.level.getBlockState(peekTarget).isAir()) {
+			endPeekTask(player);
+			return;
+		}
+		if (!withinReach(player, peekTarget)) {
+			BlockPos approach = adjacentPlanCell(peekTarget);
+			if (approach == null) {
+				endPeekTask(player);
+				return;
+			}
+			if (!MoveController.atTarget(player, approach) && !MoveController.isMoving()) {
+				MoveController.moveTo(approach);
+			}
+			return;
+		}
+		if (!selectPlacementSlot(player)) {
+			endPeekTask(player);
+			return;
+		}
+		if (!BlockPlacer.isPlacing() || !peekTarget.equals(BlockPlacer.target())) {
+			BlockPlacer.place(peekTarget);
+		}
+		BlockPlacer.Status status = BlockPlacer.tick();
+		if (status == BlockPlacer.Status.DONE || status == BlockPlacer.Status.FAILED) {
+			endPeekTask(player);
+		}
+	}
+
+	private static void endPeekTask(LocalPlayer player) {
+		BlockBreaker.stop();
+		BlockPlacer.stop();
+		MoveController.stop();
+		if (player != null && peekSavedSlot >= 0) {
+			player.getInventory().setSelectedSlot(peekSavedSlot);
+		}
+		peekSavedSlot = -1;
+		if (peekTarget != null) {
+			peekDone.add(peekTarget);
+		}
+		peekTarget = null;
+		peekStall = 0;
+		peekLastBlock = null;
+		peekPhase = PeekPhase.NONE;
+	}
+
+	private static void resetPeekTask() {
+		BlockBreaker.stop();
+		BlockPlacer.stop();
+		LocalPlayer player = Minecraft.getInstance().player;
+		if (player != null && peekSavedSlot >= 0) {
+			player.getInventory().setSelectedSlot(peekSavedSlot);
+		}
+		peekSavedSlot = -1;
+		peekPhase = PeekPhase.NONE;
+		peekTarget = null;
+		peekTargets = null;
+		peekDone.clear();
+		peekStall = 0;
+		peekLastBlock = null;
 	}
 
 	private static void restoreSlot() {
@@ -1040,6 +1593,15 @@ public final class TunnelDigger {
 	}
 
 	public static String modeName() {
-		return orePhase != OrePhase.NONE ? "ORE_MINING" : mode.name();
+		if (orePhase != OrePhase.NONE) {
+			return "ORE_MINING";
+		}
+		if (gravelPhase != GravelPhase.NONE) {
+			return "GRAVEL";
+		}
+		if (peekPhase != PeekPhase.NONE) {
+			return "PEEK";
+		}
+		return mode.name();
 	}
 }

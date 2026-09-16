@@ -92,6 +92,12 @@ public final class Persistence {
 			if (root.has("autoMine")) {
 				MiningSettings.setAutoMineOres(root.get("autoMine").getAsBoolean());
 			}
+			if (root.has("maxBlocks")) {
+				MarkManager.config().maxBlocks = root.get("maxBlocks").getAsInt();
+			}
+			if (root.has("maxBlocksOverride")) {
+				MarkManager.config().maxBlocksOverride = root.get("maxBlocksOverride").getAsBoolean();
+			}
 		} catch (Exception e) {
 			JHenry.LOGGER.error("JHenry: failed to load data for {}", uuid, e);
 		}
@@ -130,6 +136,8 @@ public final class Persistence {
 			}
 			root.add("scaffolds", scaffolds);
 			root.addProperty("autoMine", MiningSettings.autoMineOres());
+			root.addProperty("maxBlocks", MarkManager.config().maxBlocks);
+			root.addProperty("maxBlocksOverride", MarkManager.config().maxBlocksOverride);
 
 			try (Writer writer = Files.newBufferedWriter(file)) {
 				GSON.toJson(root, writer);

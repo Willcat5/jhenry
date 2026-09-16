@@ -9,6 +9,7 @@ import java.util.Set;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.FallingBlock;
 import willits.jhenry.JHenry;
 
 public final class TunnelMapper {
@@ -34,7 +35,8 @@ public final class TunnelMapper {
 		StopReason forwardReason = StopReason.MAX_DISTANCE;
 		for (int i = 1; i <= capL; i++) {
 			BlockPos cell = mark.entrance().relative(dir, i);
-			BlockSafety.Verdict verdict = BlockSafety.evaluate(level, cell, dir.getOpposite(), false);
+			BlockSafety.Verdict verdict = effectiveVerdict(level, cell, dir.getOpposite(), false,
+					config.handleGravel, originOpen);
 			if (verdict != BlockSafety.Verdict.SAFE) {
 				forwardReason = reasonFor(verdict);
 				break;
@@ -47,7 +49,8 @@ public final class TunnelMapper {
 		Attempt last = null;
 		int fails = 0;
 		for (int length = startL; length >= 1; length--) {
-			Attempt attempt = tryBuild(level, mark.entrance(), dir, lateral, length, originOpen);
+			Attempt attempt = tryBuild(level, mark.entrance(), dir, lateral, length, originOpen,
+					config.handleGravel);
 			if (attempt.valid) {
 				StopReason reason = attempt.reason != null ? attempt.reason : forwardReason;
 				BlockPos stop = mark.entrance().relative(dir, length + 1);
@@ -121,26 +124,29 @@ public final class TunnelMapper {
 	}
 
 	private static Attempt tryBuild(Level level, BlockPos entrance, Direction dir, Direction lateral, int length,
-			Set<BlockPos> originOpen) {
+			Set<BlockPos> originOpen, boolean handleGravel) {
 		List<PlannedCell> cells = new ArrayList<>();
 		Set<BlockPos> planned = new HashSet<>();
+		Set<BlockPos> passable = new HashSet<>(originOpen);
 
 		BlockPos cursor = entrance;
 		for (int i = 0; i < length; i++) {
 			cursor = cursor.relative(dir);
-			BlockSafety.Verdict verdict = BlockSafety.evaluate(level, cursor, dir.getOpposite(), false);
+			BlockSafety.Verdict verdict = effectiveVerdict(level, cursor, dir.getOpposite(), false, handleGravel, passable);
 			if (verdict != BlockSafety.Verdict.SAFE) {
 				return Attempt.blocked(reasonFor(verdict), "OUTWARD " + cursor.toShortString() + " " + verdict
 						+ " [" + BlockSafety.describe(level, cursor, dir.getOpposite(), false) + "]",
 						cursor.immutable(), Segment.OUTWARD);
 			}
 			planned.add(cursor.immutable());
+			passable.add(cursor.immutable());
 			cells.add(new PlannedCell(cursor.immutable(), Segment.OUTWARD));
 		}
 
 		for (int i = 0; i < SIDESTEP; i++) {
 			cursor = cursor.relative(lateral);
-			BlockSafety.Verdict verdict = BlockSafety.evaluate(level, cursor, lateral.getOpposite(), false);
+			BlockSafety.Verdict verdict = effectiveVerdict(level, cursor, lateral.getOpposite(), false, handleGravel,
+					passable);
 			if (verdict != BlockSafety.Verdict.SAFE) {
 				return Attempt.blocked(segmentReason(verdict, StopReason.SIDESTEP_BLOCKED),
 						"SIDESTEP " + cursor.toShortString() + " " + verdict
@@ -148,6 +154,7 @@ public final class TunnelMapper {
 						cursor.immutable(), Segment.SIDESTEP);
 			}
 			planned.add(cursor.immutable());
+			passable.add(cursor.immutable());
 			cells.add(new PlannedCell(cursor.immutable(), Segment.SIDESTEP));
 		}
 
@@ -160,10 +167,10 @@ public final class TunnelMapper {
 			}
 
 			boolean forwardIsOrigin = originOpen.contains(next.relative(dir.getOpposite()));
-			BlockSafety.Verdict verdict = BlockSafety.evaluate(level, next, dir, forwardIsOrigin);
+			BlockSafety.Verdict verdict = effectiveVerdict(level, next, dir, forwardIsOrigin, handleGravel, passable);
 			if (verdict != BlockSafety.Verdict.SAFE) {
 				returnStop = next.immutable();
-				Attempt cut = cutOver(level, cells, planned, cursor, dir, lateral);
+				Attempt cut = cutOver(level, cells, planned, passable, cursor, dir, lateral, handleGravel);
 				if (cut != null) {
 					return cut;
 				}
@@ -172,21 +179,22 @@ public final class TunnelMapper {
 
 			cursor = next;
 			planned.add(cursor.immutable());
+			passable.add(cursor.immutable());
 			cells.add(new PlannedCell(cursor.immutable(), Segment.RETURN));
 		}
 
 		return Attempt.valid(cells, returnStop);
 	}
 
-	private static Attempt cutOver(Level level, List<PlannedCell> cells, Set<BlockPos> planned, BlockPos from,
-			Direction dir, Direction lateral) {
+	private static Attempt cutOver(Level level, List<PlannedCell> cells, Set<BlockPos> planned, Set<BlockPos> passable,
+			BlockPos from, Direction dir, Direction lateral, boolean handleGravel) {
 		BlockPos cut = from;
 		for (int j = 0; j < SIDESTEP; j++) {
 			cut = cut.relative(lateral.getOpposite());
 			if (planned.contains(cut)) {
 				return null;
 			}
-			BlockSafety.Verdict verdict = BlockSafety.evaluate(level, cut, lateral, false);
+			BlockSafety.Verdict verdict = effectiveVerdict(level, cut, lateral, false, handleGravel, passable);
 			if (verdict != BlockSafety.Verdict.SAFE) {
 				return Attempt.blocked(StopReason.RETURN_BLOCKED,
 						"RECONNECT " + cut.toShortString() + " " + verdict
@@ -194,9 +202,23 @@ public final class TunnelMapper {
 						cut.immutable(), Segment.RECONNECT);
 			}
 			planned.add(cut.immutable());
+			passable.add(cut.immutable());
 			cells.add(new PlannedCell(cut.immutable(), Segment.RECONNECT));
 		}
 		return null;
+	}
+
+	private static BlockSafety.Verdict effectiveVerdict(Level level, BlockPos cell, Direction backward,
+			boolean exemptForward, boolean handleGravel, Set<BlockPos> allowedAir) {
+		BlockSafety.Verdict verdict = BlockSafety.evaluate(level, cell, backward, exemptForward);
+		if (!handleGravel || verdict != BlockSafety.Verdict.FALLING) {
+			return verdict;
+		}
+		if (!(level.getBlockState(cell.above()).getBlock() instanceof FallingBlock)) {
+			return verdict;
+		}
+		GravelSafety.Result result = GravelSafety.scan(level, cell, allowedAir);
+		return result.verdict() == BlockSafety.Verdict.SAFE ? BlockSafety.Verdict.SAFE : result.verdict();
 	}
 
 	private static StopReason segmentReason(BlockSafety.Verdict verdict, StopReason blocked) {

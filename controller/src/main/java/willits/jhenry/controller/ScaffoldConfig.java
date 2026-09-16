@@ -18,6 +18,7 @@ public final class ScaffoldConfig {
 
 	private static final LinkedHashSet<String> ENABLED = new LinkedHashSet<>();
 	private static boolean autoMine;
+	private static boolean handleGravel;
 	private static boolean loaded;
 
 	private ScaffoldConfig() {
@@ -51,6 +52,17 @@ public final class ScaffoldConfig {
 		save();
 	}
 
+	public static synchronized boolean handleGravel() {
+		ensureLoaded();
+		return handleGravel;
+	}
+
+	public static synchronized void setHandleGravel(boolean value) {
+		ensureLoaded();
+		handleGravel = value;
+		save();
+	}
+
 	public static String normalize(String input) {
 		String text = input == null ? "" : input.trim().toLowerCase(Locale.ROOT).replace(' ', '_');
 		if (text.isEmpty()) {
@@ -67,6 +79,7 @@ public final class ScaffoldConfig {
 		Data data = load();
 		if (data != null) {
 			autoMine = data.autoMine;
+			handleGravel = data.handleGravel;
 			if (data.blocks != null) {
 				ENABLED.addAll(data.blocks);
 			}
@@ -91,6 +104,7 @@ public final class ScaffoldConfig {
 			Files.createDirectories(FILE.getParent());
 			Data data = new Data();
 			data.autoMine = autoMine;
+			data.handleGravel = handleGravel;
 			data.blocks = new ArrayList<>(ENABLED);
 			try (Writer writer = Files.newBufferedWriter(FILE)) {
 				GSON.toJson(data, writer);
@@ -102,6 +116,7 @@ public final class ScaffoldConfig {
 
 	private static final class Data {
 		boolean autoMine;
+		boolean handleGravel;
 		List<String> blocks;
 	}
 }

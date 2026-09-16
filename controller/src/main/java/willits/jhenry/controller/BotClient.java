@@ -101,11 +101,13 @@ public final class BotClient {
 		}
 	}
 
-	public boolean sendSettings(boolean autoMine, List<String> scaffolds) {
+	public boolean sendSettings(boolean autoMine, boolean handleGravel, int maxBlocks, List<String> scaffolds) {
 		try {
 			JsonObject body = new JsonObject();
 			body.addProperty("action", "settings");
 			body.addProperty("autoMine", autoMine);
+			body.addProperty("handleGravel", handleGravel);
+			body.addProperty("maxBlocks", maxBlocks);
 			JsonArray array = new JsonArray();
 			for (String id : scaffolds) {
 				array.add(id);

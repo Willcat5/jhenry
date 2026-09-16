@@ -33,6 +33,7 @@ public final class BlockBreaker {
 		if (client.level.getBlockState(pos).isAir()) {
 			return;
 		}
+		ToolSelector.hold(client.player, client.level.getBlockState(pos));
 		target = pos.immutable();
 		aim = aimPoint;
 		faceAim = false;

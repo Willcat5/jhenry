@@ -21,7 +21,6 @@ import willits.jhenry.client.BotActions;
 import willits.jhenry.client.JHenryClient;
 import willits.jhenry.client.Persistence;
 import willits.jhenry.client.dig.TunnelDigger;
-import willits.jhenry.client.look.LookController;
 import willits.jhenry.mapping.MapConfig;
 import willits.jhenry.mapping.MarkManager;
 
@@ -123,33 +122,35 @@ public class JHenryScreen extends BaseOwoScreen<FlowLayout> {
 
 		panel.child(section("Settings"));
 
+		panel.child(UIComponents.checkbox(Component.literal("Override Max Blocks"))
+				.checked(config.maxBlocksOverride)
+				.onChanged(value -> {
+					config.maxBlocksOverride = value;
+					Persistence.save();
+				}));
+
 		var maxSlider = UIComponents.slider(Sizing.fill(100));
 		maxSlider.value((config.maxBlocks - 50) / 450.0);
 		maxSlider.message(value -> Component.literal("Max Blocks: " + mapMaxBlocks(Double.parseDouble(value))));
-		maxSlider.onChanged().subscribe(value -> config.maxBlocks = mapMaxBlocks(value));
+		maxSlider.onChanged().subscribe(value -> {
+			if (config.maxBlocksOverride) {
+				config.maxBlocks = mapMaxBlocks(value);
+				Persistence.save();
+			}
+		});
 		panel.child(maxSlider);
 
 		panel.child(UIComponents.checkbox(Component.literal("Render Tunnel Path"))
 				.checked(config.render)
 				.onChanged(value -> config.render = value));
 
-		panel.child(button("Sidestep: " + config.side, () -> {
+		ButtonComponent sidestep = UIComponents.button(Component.literal("Sidestep: " + config.side), b -> {
 			config.side = config.side == MapConfig.Side.LEFT ? MapConfig.Side.RIGHT : MapConfig.Side.LEFT;
-		}));
-
-		var timeSlider = UIComponents.slider(Sizing.fill(100));
-		timeSlider.value(indexRatio(LookController.durationIndex(), LookController.durationCount()));
-		timeSlider.message(value -> Component.literal("Look Time: " + LookController.durationLabel()));
-		timeSlider.onChanged().subscribe(value -> LookController.setDurationIndex(
-				ratioIndex(value, LookController.durationCount())));
-		panel.child(timeSlider);
-
-		var jitterSlider = UIComponents.slider(Sizing.fill(100));
-		jitterSlider.value(indexRatio(LookController.jitterIndex(), LookController.jitterCount()));
-		jitterSlider.message(value -> Component.literal("Look Jitter: " + LookController.jitterLabel()));
-		jitterSlider.onChanged().subscribe(value -> LookController.setJitterIndex(
-				ratioIndex(value, LookController.jitterCount())));
-		panel.child(jitterSlider);
+			b.setMessage(Component.literal("Sidestep: " + config.side));
+		});
+		sidestep.horizontalSizing(Sizing.fill(100));
+		sidestep.renderer(DARK_BUTTON);
+		panel.child(sidestep);
 
 		root.child(panel);
 		refreshStatus();
@@ -164,14 +165,6 @@ public class JHenryScreen extends BaseOwoScreen<FlowLayout> {
 
 	private int mapMaxBlocks(double value) {
 		return 50 + (int) Math.round(value * 450.0);
-	}
-
-	private double indexRatio(int index, int count) {
-		return count <= 1 ? 0.0 : (double) index / (count - 1);
-	}
-
-	private int ratioIndex(double value, int count) {
-		return (int) Math.round(value * (count - 1));
 	}
 
 	private UIComponent section(String title) {

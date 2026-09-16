@@ -128,11 +128,13 @@ public final class ControlServer {
 			JsonArray ores = request.has("ores") ? request.getAsJsonArray("ores") : null;
 			JsonArray scaffolds = request.has("scaffolds") ? request.getAsJsonArray("scaffolds") : null;
 			Boolean autoMine = request.has("autoMine") ? request.get("autoMine").getAsBoolean() : null;
+			Boolean handleGravel = request.has("handleGravel") ? request.get("handleGravel").getAsBoolean() : null;
+			Integer maxBlocks = request.has("maxBlocks") ? request.get("maxBlocks").getAsInt() : null;
 			Boolean ok = onClientThread(() -> {
 				if ("filter".equals(action)) {
 					applyFilter(ores);
 				} else if ("settings".equals(action)) {
-					applySettings(scaffolds, autoMine);
+					applySettings(scaffolds, autoMine, handleGravel, maxBlocks);
 				} else {
 					execute(action);
 				}
@@ -295,7 +297,7 @@ public final class ControlServer {
 		Persistence.save();
 	}
 
-	private static void applySettings(JsonArray scaffolds, Boolean autoMine) {
+	private static void applySettings(JsonArray scaffolds, Boolean autoMine, Boolean handleGravel, Integer maxBlocks) {
 		if (scaffolds != null) {
 			List<Block> blocks = new ArrayList<>();
 			for (JsonElement element : scaffolds) {
@@ -308,6 +310,12 @@ public final class ControlServer {
 		}
 		if (autoMine != null) {
 			MiningSettings.setAutoMineOres(autoMine);
+		}
+		if (handleGravel != null) {
+			MarkManager.config().handleGravel = handleGravel;
+		}
+		if (maxBlocks != null && !MarkManager.config().maxBlocksOverride) {
+			MarkManager.config().maxBlocks = maxBlocks;
 		}
 		Persistence.save();
 	}
@@ -365,6 +373,9 @@ public final class ControlServer {
 		status.addProperty("marks", MarkManager.marks().size());
 		status.addProperty("plans", MarkManager.plans().size());
 		status.addProperty("autoMine", MiningSettings.autoMineOres());
+		status.addProperty("handleGravel", MarkManager.config().handleGravel);
+		status.addProperty("maxBlocks", MarkManager.config().maxBlocks);
+		status.addProperty("maxBlocksOverride", MarkManager.config().maxBlocksOverride);
 		JsonArray ores = new JsonArray();
 		for (Block block : OreFilter.enabled()) {
 			ores.add(OreFilter.idOf(block).toString());

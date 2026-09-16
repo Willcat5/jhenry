@@ -11,13 +11,10 @@ import net.minecraft.world.phys.Vec3;
 
 public final class LookController {
 
-	private static final int[] DURATIONS = {6, 10, 14, 20, 30};
-	private static final float[] JITTERS = {0.0F, 0.4F, 0.8F, 1.5F};
+	private static final int DURATION = 10;
+	private static final float JITTER = 0.4F;
 
 	private static final float DRIFT_ALPHA = 0.12F;
-
-	private static int durationIndex = 1;
-	private static int jitterIndex = 1;
 
 	private static float startYaw;
 	private static float startPitch;
@@ -78,7 +75,7 @@ public final class LookController {
 			return;
 		}
 
-		float jitter = JITTERS[jitterIndex];
+		float jitter = JITTER;
 		ThreadLocalRandom random = ThreadLocalRandom.current();
 		float landingYaw = (random.nextFloat() * 2.0F - 1.0F) * jitter;
 		float landingPitch = (random.nextFloat() * 2.0F - 1.0F) * jitter;
@@ -116,9 +113,9 @@ public final class LookController {
 			return;
 		}
 
-		updateDrift(JITTERS[jitterIndex]);
+		updateDrift(JITTER);
 
-		int duration = DURATIONS[durationIndex];
+		int duration = DURATION;
 		elapsed++;
 		float t = Math.min(1.0F, (float) elapsed / duration);
 		float eased = t * t * (3.0F - 2.0F * t);
@@ -165,45 +162,5 @@ public final class LookController {
 		active = false;
 		driftYaw = 0.0F;
 		driftPitch = 0.0F;
-	}
-
-	public static String durationLabel() {
-		return DURATIONS[durationIndex] + "t";
-	}
-
-	public static void cycleDuration() {
-		durationIndex = (durationIndex + 1) % DURATIONS.length;
-	}
-
-	public static int durationIndex() {
-		return durationIndex;
-	}
-
-	public static void setDurationIndex(int index) {
-		durationIndex = Math.floorMod(index, DURATIONS.length);
-	}
-
-	public static int durationCount() {
-		return DURATIONS.length;
-	}
-
-	public static String jitterLabel() {
-		return String.format("%.1f°", JITTERS[jitterIndex]);
-	}
-
-	public static void cycleJitter() {
-		jitterIndex = (jitterIndex + 1) % JITTERS.length;
-	}
-
-	public static int jitterIndex() {
-		return jitterIndex;
-	}
-
-	public static void setJitterIndex(int index) {
-		jitterIndex = Math.floorMod(index, JITTERS.length);
-	}
-
-	public static int jitterCount() {
-		return JITTERS.length;
 	}
 }
