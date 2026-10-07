@@ -18,3 +18,6 @@ Jhenry does not automate some things, as large ore veins, pathfinding between tu
 scope, as they are difficult to make look "human". These are intended to be included in the caribou API when it is finished.
 
 This mod is designed for 1.21.11, due to its experimental nature, you'll have to build it yourself.
+
+## Dependencies
+Fabric loader, owo-lib, and fabric API
