@@ -36,6 +36,7 @@ public final class MainWindow extends JFrame {
 	private final List<BotCard> cards = new ArrayList<>();
 	private final Map<BotConfig, BotStatus> lastStatus = new HashMap<>();
 	private final Map<BotConfig, Long> lastSeq = new HashMap<>();
+	private final Map<BotConfig, Long> lastFinishedSeq = new HashMap<>();
 	private final Map<BotConfig, Long> lastSettingsPush = new HashMap<>();
 
 	private final JPanel cardGrid = new JPanel();
@@ -245,6 +246,7 @@ public final class MainWindow extends JFrame {
 					}
 				}
 				handleAction(card, bot, status);
+				handleFinished(card, bot, status);
 				lastStatus.put(bot, status);
 				card.update(status);
 				if (status.online()) {
@@ -270,6 +272,28 @@ public final class MainWindow extends JFrame {
 			}
 		}
 		lastSeq.put(bot, status.actionSeq());
+	}
+
+	private void handleFinished(BotCard card, BotConfig bot, BotStatus status) {
+		Long previous = lastFinishedSeq.get(bot);
+		lastFinishedSeq.put(bot, status.finishedSeq());
+		if (previous == null || status.finishedSeq() == previous) {
+			return;
+		}
+		String dimension = status.finishedDimension();
+		if (dimension == null || dimension.isEmpty()) {
+			return;
+		}
+		int x = status.finishedX();
+		int y = status.finishedY();
+		int z = status.finishedZ();
+		card.logLine("finished " + x + "," + y + "," + z + " -> clearing other bots");
+		for (BotConfig other : new ArrayList<>(bots)) {
+			if (other.equals(bot)) {
+				continue;
+			}
+			new Thread(() -> new BotClient(other).sendClear(x, y, z, dimension), "jhenry-clear").start();
+		}
 	}
 
 	private void handleTransitions(BotCard card, BotStatus previous, BotStatus current) {
@@ -385,6 +409,7 @@ public final class MainWindow extends JFrame {
 			statuses.add(BotStatus.offline());
 			lastStatus.remove(bot);
 			lastSeq.remove(bot);
+			lastFinishedSeq.remove(bot);
 			BotRegistry.save(bots);
 			rebuildCards();
 		} catch (NumberFormatException e) {
@@ -413,6 +438,7 @@ public final class MainWindow extends JFrame {
 						statuses.add(BotStatus.offline());
 						lastStatus.remove(bot);
 						lastSeq.remove(bot);
+						lastFinishedSeq.remove(bot);
 						added++;
 					}
 				}
@@ -435,6 +461,7 @@ public final class MainWindow extends JFrame {
 		}
 		lastStatus.remove(bot);
 		lastSeq.remove(bot);
+		lastFinishedSeq.remove(bot);
 		BotRegistry.save(bots);
 		rebuildCards();
 	}

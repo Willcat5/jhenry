@@ -149,9 +149,7 @@ public final class LookController {
 	}
 
 	private static void apply(LocalPlayer player, float yaw, float pitch) {
-		player.setYRot(yaw);
-		player.setXRot(Mth.clamp(pitch, -90.0F, 90.0F));
-		player.setYHeadRot(yaw);
+		Rotation.setAngles(player, yaw, pitch);
 	}
 
 	public static boolean isActive() {

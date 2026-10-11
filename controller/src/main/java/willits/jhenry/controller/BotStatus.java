@@ -9,12 +9,14 @@ public record BotStatus(boolean online, long pid, String name, String uuid, doub
 		int toolDurability, int freeSlots, int marks, int plans,
 		boolean autoMine, boolean handleGravel, boolean autoTool, boolean peek, boolean pauseOnDamage,
 		int maxBlocks, boolean maxBlocksOverride,
+		long finishedSeq, int finishedX, int finishedY, int finishedZ, String finishedDimension,
 		List<String> ores, List<String> scaffolds,
 		List<InventorySlot> inventory) {
 
 	public static BotStatus offline() {
 		return new BotStatus(false, -1, "", "", 0, 0, 0, "", 0, 0, false, "", "",
 				0, "", 0, 0, "", -1, -1, 0, 0, false, false, true, true, true, 100, false,
+				0, 0, 0, 0, "",
 				List.of(), List.of(), List.of());
 	}
 }

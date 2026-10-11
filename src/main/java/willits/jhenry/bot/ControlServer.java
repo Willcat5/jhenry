@@ -26,6 +26,11 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
@@ -133,11 +138,17 @@ public final class ControlServer {
 			Boolean autoTool = request.has("autoTool") ? request.get("autoTool").getAsBoolean() : null;
 			Boolean peek = request.has("peek") ? request.get("peek").getAsBoolean() : null;
 			Boolean pauseOnDamage = request.has("pauseOnDamage") ? request.get("pauseOnDamage").getAsBoolean() : null;
+			Integer clearX = request.has("x") ? request.get("x").getAsInt() : null;
+			Integer clearY = request.has("y") ? request.get("y").getAsInt() : null;
+			Integer clearZ = request.has("z") ? request.get("z").getAsInt() : null;
+			String clearDim = request.has("dimension") ? request.get("dimension").getAsString() : null;
 			Boolean ok = onClientThread(() -> {
 				if ("filter".equals(action)) {
 					applyFilter(ores);
 				} else if ("settings".equals(action)) {
 					applySettings(scaffolds, autoMine, handleGravel, maxBlocks, autoTool, peek, pauseOnDamage);
+				} else if ("clear".equals(action)) {
+					applyClear(clearX, clearY, clearZ, clearDim);
 				} else {
 					execute(action);
 				}
@@ -333,6 +344,35 @@ public final class ControlServer {
 		Persistence.save();
 	}
 
+	private static void applyClear(Integer x, Integer y, Integer z, String dimension) {
+		if (x == null || y == null || z == null || dimension == null || dimension.isEmpty()) {
+			return;
+		}
+		BlockPos entrance = new BlockPos(x, y, z);
+		ResourceKey<Level> dim;
+		try {
+			dim = ResourceKey.create(Registries.DIMENSION, Identifier.parse(dimension));
+		} catch (Exception e) {
+			return;
+		}
+
+		TunnelPlan active = TunnelDigger.currentPlan();
+		if (active != null && active.mark().entrance().equals(entrance) && active.mark().dimension().equals(dim)) {
+			TunnelDigger.stop();
+		}
+
+		MarkManager.removePlanAt(entrance, dim);
+		MarkManager.removeMarkAt(entrance, dim);
+		Persistence.save();
+
+		LocalPlayer player = Minecraft.getInstance().player;
+		if (player != null) {
+			player.displayClientMessage(
+					Component.literal("JHenry: tunnel @ " + entrance.toShortString()
+							+ " finished by another bot, cleared"), false);
+		}
+	}
+
 	private static JsonObject buildStatus() {
 		JsonObject status = new JsonObject();
 		Minecraft client = Minecraft.getInstance();
@@ -377,6 +417,15 @@ public final class ControlServer {
 		status.addProperty("blocksTotal", TunnelDigger.blocksTotal());
 		BlockPos target = TunnelDigger.currentTarget();
 		status.addProperty("target", target == null ? "" : target.toShortString());
+		status.addProperty("finishedSeq", TunnelDigger.finishedSeq());
+		BlockPos finished = TunnelDigger.finishedEntrance();
+		ResourceKey<Level> finishedDim = TunnelDigger.finishedDimension();
+		if (finished != null && finishedDim != null) {
+			status.addProperty("finishedX", finished.getX());
+			status.addProperty("finishedY", finished.getY());
+			status.addProperty("finishedZ", finished.getZ());
+			status.addProperty("finishedDimension", finishedDim.identifier().toString());
+		}
 		if (online) {
 			ItemStack tool = player.getMainHandItem();
 			status.addProperty("toolDurability",

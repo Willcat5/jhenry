@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.Level;
 
 public final class MarkManager {
 
@@ -35,6 +37,10 @@ public final class MarkManager {
 		MARKS.remove(mark);
 	}
 
+	public static void removeMarkAt(BlockPos entrance, ResourceKey<Level> dimension) {
+		MARKS.removeIf(mark -> mark.entrance().equals(entrance) && mark.dimension().equals(dimension));
+	}
+
 	public static void clearMarks() {
 		MARKS.clear();
 	}
@@ -45,6 +51,10 @@ public final class MarkManager {
 
 	public static void clearPlans() {
 		PLANS.clear();
+	}
+
+	public static void removePlanAt(BlockPos entrance, ResourceKey<Level> dimension) {
+		PLANS.removeIf(plan -> plan.mark().entrance().equals(entrance) && plan.mark().dimension().equals(dimension));
 	}
 
 	public static List<BlockPos> exposedOres() {

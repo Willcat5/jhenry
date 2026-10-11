@@ -131,6 +131,28 @@ public final class BotClient {
 		}
 	}
 
+	public boolean sendClear(int x, int y, int z, String dimension) {
+		try {
+			JsonObject body = new JsonObject();
+			body.addProperty("action", "clear");
+			body.addProperty("x", x);
+			body.addProperty("y", y);
+			body.addProperty("z", z);
+			body.addProperty("dimension", dimension);
+			HttpRequest request = HttpRequest.newBuilder()
+					.uri(URI.create(base() + "/command"))
+					.timeout(Duration.ofSeconds(3))
+					.header("X-JHenry-Token", config.token())
+					.header("Content-Type", "application/json")
+					.POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+					.build();
+			HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+			return response.statusCode() == 200;
+		} catch (Exception e) {
+			return false;
+		}
+	}
+
 	private String base() {
 		return "http://" + config.host() + ":" + config.port();
 	}

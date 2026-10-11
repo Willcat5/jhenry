@@ -13,6 +13,7 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.player.Inventory;
@@ -27,7 +28,9 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
+import willits.jhenry.client.Persistence;
 import willits.jhenry.client.look.LookController;
+import willits.jhenry.client.look.Rotation;
 import willits.jhenry.mapping.BlockSafety;
 import willits.jhenry.mapping.GravelSafety;
 import willits.jhenry.mapping.MarkManager;
@@ -36,6 +39,7 @@ import willits.jhenry.mapping.OreFilter;
 import willits.jhenry.mapping.PlannedCell;
 import willits.jhenry.mapping.ScaffoldFilter;
 import willits.jhenry.mapping.Segment;
+import willits.jhenry.mapping.TunnelMark;
 import willits.jhenry.mapping.TunnelPlan;
 
 public final class TunnelDigger {
@@ -91,6 +95,9 @@ public final class TunnelDigger {
 	private static List<Run> runs;
 	private static int runIndex;
 	private static TunnelPlan lastPlan;
+	private static BlockPos finishedEntrance;
+	private static ResourceKey<Level> finishedDimension;
+	private static long finishedSeq;
 	private static int mineTimer;
 	private static int mineFails;
 	private static boolean breakingThisInterval;
@@ -403,9 +410,7 @@ public final class TunnelDigger {
 		float yaw = player.getYRot() + Mth.wrapDegrees(targetYaw - player.getYRot()) * AIM_LERP;
 		float pitch = player.getXRot() + (targetPitch - player.getXRot()) * AIM_LERP;
 
-		player.setYRot(yaw);
-		player.setXRot(pitch);
-		player.setYHeadRot(yaw);
+		Rotation.setAngles(player, yaw, pitch);
 	}
 
 	private static List<Run> buildRuns(List<BlockPos> cells, BlockPos start, boolean dig) {
@@ -465,8 +470,14 @@ public final class TunnelDigger {
 		resetGravelTask();
 		resetPeekTask();
 		if (lastPlan != null) {
+			TunnelMark mark = lastPlan.mark();
 			MarkManager.plans().remove(lastPlan);
+			MarkManager.removeMark(mark);
+			finishedEntrance = mark.entrance().immutable();
+			finishedDimension = mark.dimension();
+			finishedSeq++;
 			lastPlan = null;
+			Persistence.save();
 		}
 		mode = Mode.DONE;
 		message("JHenry: tunnel complete");
@@ -1476,6 +1487,22 @@ public final class TunnelDigger {
 
 	public static BlockPos currentTarget() {
 		return currentTarget;
+	}
+
+	public static BlockPos finishedEntrance() {
+		return finishedEntrance;
+	}
+
+	public static ResourceKey<Level> finishedDimension() {
+		return finishedDimension;
+	}
+
+	public static long finishedSeq() {
+		return finishedSeq;
+	}
+
+	public static TunnelPlan currentPlan() {
+		return lastPlan;
 	}
 
 	private static boolean isStanding(LocalPlayer player) {
