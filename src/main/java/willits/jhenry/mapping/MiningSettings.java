@@ -2,12 +2,21 @@ package willits.jhenry.mapping;
 
 public final class MiningSettings {
 
+	private static MiningMode miningMode = MiningMode.TUNNEL;
 	private static boolean autoMineOres;
 	private static boolean autoTool = true;
 	private static boolean peek = true;
 	private static boolean pauseOnDamage = true;
 
 	private MiningSettings() {
+	}
+
+	public static MiningMode miningMode() {
+		return miningMode;
+	}
+
+	public static void setMiningMode(MiningMode value) {
+		miningMode = value == null ? MiningMode.TUNNEL : value;
 	}
 
 	public static boolean autoMineOres() {

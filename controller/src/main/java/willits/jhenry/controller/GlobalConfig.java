@@ -13,6 +13,8 @@ public final class GlobalConfig {
 	private static final Path FILE = Path.of(System.getProperty("user.home"), ".jhenry", "global.json");
 
 	private static int maxBlocks = 100;
+	private static int volumeLength = 8;
+	private static int volumeSplitWidth = 6;
 	private static int soundVolume = 60;
 	private static boolean autoTool = true;
 	private static boolean peek = true;
@@ -46,6 +48,36 @@ public final class GlobalConfig {
 
 	public static int clampMaxBlocks(int value) {
 		return Math.max(50, Math.min(500, value));
+	}
+
+	public static synchronized int volumeLength() {
+		ensureLoaded();
+		return volumeLength;
+	}
+
+	public static synchronized void setVolumeLength(int value) {
+		ensureLoaded();
+		volumeLength = clampVolumeLength(value);
+		save();
+	}
+
+	public static int clampVolumeLength(int value) {
+		return Math.max(1, Math.min(64, value));
+	}
+
+	public static synchronized int volumeSplitWidth() {
+		ensureLoaded();
+		return volumeSplitWidth;
+	}
+
+	public static synchronized void setVolumeSplitWidth(int value) {
+		ensureLoaded();
+		volumeSplitWidth = clampVolumeSplitWidth(value);
+		save();
+	}
+
+	public static int clampVolumeSplitWidth(int value) {
+		return Math.max(2, Math.min(64, value));
 	}
 
 	public static synchronized boolean autoTool() {
@@ -89,6 +121,8 @@ public final class GlobalConfig {
 		Data data = load();
 		if (data != null) {
 			maxBlocks = clampMaxBlocks(data.maxBlocks);
+			volumeLength = clampVolumeLength(data.volumeLength);
+			volumeSplitWidth = clampVolumeSplitWidth(data.volumeSplitWidth);
 			soundVolume = Math.max(0, Math.min(100, data.soundVolume));
 			autoTool = data.autoTool == null ? true : data.autoTool;
 			peek = data.peek == null ? true : data.peek;
@@ -114,6 +148,8 @@ public final class GlobalConfig {
 			Files.createDirectories(FILE.getParent());
 			Data data = new Data();
 			data.maxBlocks = maxBlocks;
+			data.volumeLength = volumeLength;
+			data.volumeSplitWidth = volumeSplitWidth;
 			data.soundVolume = soundVolume;
 			data.autoTool = autoTool;
 			data.peek = peek;
@@ -128,6 +164,8 @@ public final class GlobalConfig {
 
 	private static final class Data {
 		int maxBlocks = 100;
+		int volumeLength = 8;
+		int volumeSplitWidth = 6;
 		int soundVolume = 60;
 		Boolean autoTool;
 		Boolean peek;

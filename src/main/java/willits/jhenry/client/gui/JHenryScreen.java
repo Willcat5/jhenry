@@ -16,17 +16,22 @@ import io.wispforest.owo.ui.core.Surface;
 import io.wispforest.owo.ui.core.UIComponent;
 import io.wispforest.owo.ui.core.VerticalAlignment;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
+import org.joml.Matrix3x2fStack;
 import willits.jhenry.client.BotActions;
 import willits.jhenry.client.JHenryClient;
 import willits.jhenry.client.Persistence;
 import willits.jhenry.client.dig.TunnelDigger;
+import willits.jhenry.client.dig.VolumeDigger;
 import willits.jhenry.mapping.MapConfig;
 import willits.jhenry.mapping.MarkManager;
 
 public class JHenryScreen extends BaseOwoScreen<FlowLayout> {
 
 	private static final int PANEL_WIDTH = 300;
+	private static final double TARGET_GUI_SCALE = 2.0;
 
 	private static final int PANEL_BG = 0xE6121212;
 	private static final int PANEL_BORDER = 0xFF3A3A3A;
@@ -65,9 +70,8 @@ public class JHenryScreen extends BaseOwoScreen<FlowLayout> {
 
 	@Override
 	protected void build(FlowLayout root) {
-		root.surface(Surface.flat(ROOT_DIM));
+		root.surface(Surface.flat(0x00000000));
 		root.alignment(HorizontalAlignment.CENTER, VerticalAlignment.CENTER);
-
 		MapConfig config = MarkManager.config();
 
 		FlowLayout panel = UIContainers.verticalFlow(Sizing.fixed(PANEL_WIDTH), Sizing.content());
@@ -87,11 +91,11 @@ public class JHenryScreen extends BaseOwoScreen<FlowLayout> {
 		panel.child(statusLabel);
 
 		panel.child(section("Mapping"));
-		panel.child(button("Map Tunnels", () -> {
+		panel.child(button("Map", () -> {
 			BotActions.map();
 			refreshStatus();
 		}));
-		panel.child(button("Mark Looked-At Trapdoor", () -> {
+		panel.child(button("Mark Looked-At", () -> {
 			JHenryClient.markLookedAt(Minecraft.getInstance());
 			refreshStatus();
 		}));
@@ -99,23 +103,27 @@ public class JHenryScreen extends BaseOwoScreen<FlowLayout> {
 		panel.child(section("Digging"));
 		panel.child(row(
 				button("Dig", () -> {
-					if (TunnelDigger.isRunning()) {
+					if (TunnelDigger.isRunning() || VolumeDigger.isRunning()) {
 						TunnelDigger.stop();
+						VolumeDigger.stop();
 					} else {
 						JHenryClient.digPlan();
 					}
 					this.onClose();
 				}),
-				button("Resume", TunnelDigger::resume)));
+				button("Resume", BotActions::resume)));
 		panel.child(row(
 				button("Clear Marks", () -> {
 					MarkManager.clearMarks();
+					MarkManager.clearVolumeCorners();
 					MarkManager.clearPlans();
+					MarkManager.clearVolumePlans();
 					Persistence.save();
 					refreshStatus();
 				}),
 				button("Clear Plans", () -> {
 					MarkManager.clearPlans();
+					MarkManager.clearVolumePlans();
 					Persistence.save();
 					refreshStatus();
 				})));
@@ -139,6 +147,24 @@ public class JHenryScreen extends BaseOwoScreen<FlowLayout> {
 			}
 		});
 		panel.child(maxSlider);
+
+		panel.child(UIComponents.checkbox(Component.literal("Override Volume Length"))
+				.checked(config.volumeLengthOverride)
+				.onChanged(value -> {
+					config.volumeLengthOverride = value;
+					Persistence.save();
+				}));
+
+		var lengthSlider = UIComponents.slider(Sizing.fill(100));
+		lengthSlider.value((config.volumeLength - 1) / 63.0);
+		lengthSlider.message(value -> Component.literal("Volume Length: " + mapVolumeLength(Double.parseDouble(value))));
+		lengthSlider.onChanged().subscribe(value -> {
+			if (config.volumeLengthOverride) {
+				config.volumeLength = mapVolumeLength(value);
+				Persistence.save();
+			}
+		});
+		panel.child(lengthSlider);
 
 		panel.child(UIComponents.checkbox(Component.literal("Render Tunnel Path"))
 				.checked(config.render)
@@ -167,6 +193,10 @@ public class JHenryScreen extends BaseOwoScreen<FlowLayout> {
 		return 50 + (int) Math.round(value * 450.0);
 	}
 
+	private int mapVolumeLength(double value) {
+		return Math.max(1, Math.min(64, 1 + (int) Math.round(value * 63.0)));
+	}
+
 	private UIComponent section(String title) {
 		return UIComponents.label(Component.literal(title)).color(MUTED).shadow(true);
 	}
@@ -193,5 +223,66 @@ public class JHenryScreen extends BaseOwoScreen<FlowLayout> {
 		button.horizontalSizing(Sizing.fixed(20));
 		button.renderer(DARK_BUTTON);
 		return button;
+	}
+
+	private float uiScale() {
+		int guiScale = minecraft.getWindow().getGuiScale();
+		if (guiScale <= 0) {
+			guiScale = 1;
+		}
+		return (float) (TARGET_GUI_SCALE / guiScale);
+	}
+
+	private double toLocal(double screen) {
+		return screen / uiScale();
+	}
+
+	@Override
+	protected void init() {
+		super.init();
+		float scale = uiScale();
+		if (uiAdapter != null && scale != 1.0F) {
+			uiAdapter.moveAndResize(0, 0, Math.round(width / scale), Math.round(height / scale));
+		}
+	}
+
+	@Override
+	public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+		graphics.fill(0, 0, width, height, ROOT_DIM);
+		float scale = uiScale();
+		Matrix3x2fStack pose = graphics.pose();
+		pose.pushMatrix();
+		pose.scale(scale, scale);
+		super.render(graphics, (int) toLocal(mouseX), (int) toLocal(mouseY), partialTick);
+		pose.popMatrix();
+	}
+
+	@Override
+	public void mouseMoved(double mouseX, double mouseY) {
+		super.mouseMoved(toLocal(mouseX), toLocal(mouseY));
+	}
+
+	@Override
+	public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+		return super.mouseClicked(
+				new MouseButtonEvent(toLocal(event.x()), toLocal(event.y()), event.buttonInfo()), doubleClick);
+	}
+
+	@Override
+	public boolean mouseReleased(MouseButtonEvent event) {
+		return super.mouseReleased(
+				new MouseButtonEvent(toLocal(event.x()), toLocal(event.y()), event.buttonInfo()));
+	}
+
+	@Override
+	public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
+		return super.mouseDragged(
+				new MouseButtonEvent(toLocal(event.x()), toLocal(event.y()), event.buttonInfo()),
+				toLocal(dragX), toLocal(dragY));
+	}
+
+	@Override
+	public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+		return super.mouseScrolled(toLocal(mouseX), toLocal(mouseY), scrollX, scrollY);
 	}
 }

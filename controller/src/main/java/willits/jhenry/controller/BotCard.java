@@ -57,6 +57,7 @@ public final class BotCard extends JPanel {
 	private final JTextPane log = new JTextPane();
 	private final ItemSlot[] slots = new ItemSlot[36];
 	private final JButton focusButton = new JButton("Focus");
+	private final ModeSlider modeToggle = new ModeSlider();
 	private final Timer blinkTimer;
 	private Border focusBorder;
 	private boolean blinkOn;
@@ -70,6 +71,8 @@ public final class BotCard extends JPanel {
 		focusButton.setFocusPainted(false);
 		focusButton.addActionListener(e -> owner.focus(bot));
 		focusBorder = focusButton.getBorder();
+		modeToggle.addListener(
+				volume -> owner.setMode(bot, volume ? ModeConfig.VOLUME : ModeConfig.TUNNEL));
 		blinkTimer = new Timer(400, e -> {
 			blinkOn = !blinkOn;
 			updateFocusBorder();
@@ -135,16 +138,18 @@ public final class BotCard extends JPanel {
 	}
 
 	private JPanel buttons() {
-		JPanel panel = new JPanel(new GridLayout(2, 3, 4, 4));
+		JPanel panel = new JPanel(new GridLayout(2, 4, 4, 4));
 		panel.setOpaque(false);
 		panel.setAlignmentX(Component.LEFT_ALIGNMENT);
 		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 64));
 
 		panel.add(action("Dig", "dig"));
 		panel.add(action("Stop", "stop"));
+		panel.add(action("Pause", "pause"));
 		panel.add(action("Resume", "resume"));
 		panel.add(action("Map", "map"));
 		panel.add(focusButton);
+		panel.add(modeToggle);
 		return panel;
 	}
 
@@ -222,6 +227,7 @@ public final class BotCard extends JPanel {
 	public void update(BotStatus status) {
 		statusDot.setForeground(status.online() ? ONLINE : OFFLINE);
 		applyOutline(status.mode(), status.online());
+		modeToggle.setVolume(ModeConfig.VOLUME.equals(status.miningMode()));
 
 		boolean failed = status.online() && "FAILED".equals(status.mode());
 		boolean paused = status.online() && "PAUSED".equals(status.mode());

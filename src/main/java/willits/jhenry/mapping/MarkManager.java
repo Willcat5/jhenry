@@ -12,6 +12,8 @@ public final class MarkManager {
 	private static final MapConfig CONFIG = new MapConfig();
 	private static final List<TunnelMark> MARKS = new ArrayList<>();
 	private static final List<TunnelPlan> PLANS = new ArrayList<>();
+	private static final List<BlockPos> VOLUME_CORNERS = new ArrayList<>();
+	private static final List<VolumePlan> VOLUME_PLANS = new ArrayList<>();
 	private static final List<BlockPos> EXPOSED_ORES = new ArrayList<>();
 
 	private MarkManager() {
@@ -27,6 +29,30 @@ public final class MarkManager {
 
 	public static List<TunnelPlan> plans() {
 		return PLANS;
+	}
+
+	public static List<BlockPos> volumeCorners() {
+		return VOLUME_CORNERS;
+	}
+
+	public static void addVolumeCorner(BlockPos pos) {
+		VOLUME_CORNERS.add(pos.immutable());
+	}
+
+	public static void clearVolumeCorners() {
+		VOLUME_CORNERS.clear();
+	}
+
+	public static List<VolumePlan> volumePlans() {
+		return VOLUME_PLANS;
+	}
+
+	public static void addVolumePlan(VolumePlan plan) {
+		VOLUME_PLANS.add(plan);
+	}
+
+	public static void clearVolumePlans() {
+		VOLUME_PLANS.clear();
 	}
 
 	public static void addMark(TunnelMark mark) {

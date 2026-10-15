@@ -41,13 +41,21 @@ import willits.jhenry.JHenry;
 import willits.jhenry.client.BotActions;
 import willits.jhenry.client.Persistence;
 import willits.jhenry.client.dig.TunnelDigger;
+import willits.jhenry.client.dig.VolumeDigger;
+import willits.jhenry.mapping.MapConfig;
 import willits.jhenry.mapping.MarkManager;
+import willits.jhenry.mapping.MiningMode;
 import willits.jhenry.mapping.MiningSettings;
+import willits.jhenry.mapping.Partition;
+import willits.jhenry.mapping.PartitionPattern;
 import willits.jhenry.mapping.OreFilter;
 import willits.jhenry.mapping.PlannedCell;
 import willits.jhenry.mapping.ScaffoldFilter;
 import willits.jhenry.mapping.Segment;
 import willits.jhenry.mapping.TunnelPlan;
+import willits.jhenry.mapping.VolumeMapper;
+import willits.jhenry.mapping.VolumeMark;
+import willits.jhenry.mapping.VolumePlan;
 
 public final class ControlServer {
 
@@ -135,9 +143,13 @@ public final class ControlServer {
 			Boolean autoMine = request.has("autoMine") ? request.get("autoMine").getAsBoolean() : null;
 			Boolean handleGravel = request.has("handleGravel") ? request.get("handleGravel").getAsBoolean() : null;
 			Integer maxBlocks = request.has("maxBlocks") ? request.get("maxBlocks").getAsInt() : null;
+			Integer volumeLength = request.has("volumeLength") ? request.get("volumeLength").getAsInt() : null;
+			Integer volumeSplitWidth = request.has("volumeSplitWidth") ? request.get("volumeSplitWidth").getAsInt()
+					: null;
 			Boolean autoTool = request.has("autoTool") ? request.get("autoTool").getAsBoolean() : null;
 			Boolean peek = request.has("peek") ? request.get("peek").getAsBoolean() : null;
 			Boolean pauseOnDamage = request.has("pauseOnDamage") ? request.get("pauseOnDamage").getAsBoolean() : null;
+			String mode = request.has("mode") ? request.get("mode").getAsString() : null;
 			Integer clearX = request.has("x") ? request.get("x").getAsInt() : null;
 			Integer clearY = request.has("y") ? request.get("y").getAsInt() : null;
 			Integer clearZ = request.has("z") ? request.get("z").getAsInt() : null;
@@ -146,7 +158,11 @@ public final class ControlServer {
 				if ("filter".equals(action)) {
 					applyFilter(ores);
 				} else if ("settings".equals(action)) {
-					applySettings(scaffolds, autoMine, handleGravel, maxBlocks, autoTool, peek, pauseOnDamage);
+					applySettings(scaffolds, autoMine, handleGravel, maxBlocks, volumeLength, volumeSplitWidth, autoTool, peek, pauseOnDamage);
+				} else if ("mode".equals(action)) {
+					applyMode(mode);
+				} else if ("setVolume".equals(action)) {
+					applySetVolume(request);
 				} else if ("clear".equals(action)) {
 					applyClear(clearX, clearY, clearZ, clearDim);
 				} else {
@@ -290,6 +306,7 @@ public final class ControlServer {
 			case "map" -> BotActions.map();
 			case "dig" -> BotActions.dig();
 			case "stop" -> BotActions.stopDig();
+			case "pause" -> BotActions.pause();
 			case "resume" -> BotActions.resume();
 			default -> {
 			}
@@ -312,7 +329,7 @@ public final class ControlServer {
 	}
 
 	private static void applySettings(JsonArray scaffolds, Boolean autoMine, Boolean handleGravel, Integer maxBlocks,
-			Boolean autoTool, Boolean peek, Boolean pauseOnDamage) {
+			Integer volumeLength, Integer volumeSplitWidth, Boolean autoTool, Boolean peek, Boolean pauseOnDamage) {
 		if (scaffolds != null) {
 			List<Block> blocks = new ArrayList<>();
 			for (JsonElement element : scaffolds) {
@@ -332,6 +349,12 @@ public final class ControlServer {
 		if (maxBlocks != null && !MarkManager.config().maxBlocksOverride) {
 			MarkManager.config().maxBlocks = maxBlocks;
 		}
+		if (volumeLength != null && !MarkManager.config().volumeLengthOverride) {
+			MarkManager.config().volumeLength = Math.max(1, Math.min(64, volumeLength));
+		}
+		if (volumeSplitWidth != null) {
+			MarkManager.config().volumeSplitWidth = Math.max(2, Math.min(64, volumeSplitWidth));
+		}
 		if (autoTool != null) {
 			MiningSettings.setAutoTool(autoTool);
 		}
@@ -340,6 +363,58 @@ public final class ControlServer {
 		}
 		if (pauseOnDamage != null) {
 			MiningSettings.setPauseOnDamage(pauseOnDamage);
+		}
+		Persistence.save();
+	}
+
+	private static void applySetVolume(JsonObject request) {
+		Minecraft client = Minecraft.getInstance();
+		if (client.level == null) {
+			return;
+		}
+		try {
+			String dimension = request.get("dimension").getAsString();
+			BlockPos a = readPos(request, "a");
+			BlockPos b = readPos(request, "b");
+			Direction away = Direction.valueOf(request.get("away").getAsString());
+			int length = request.get("length").getAsInt();
+			int splitWidth = request.has("splitWidth") ? request.get("splitWidth").getAsInt()
+					: MarkManager.config().volumeSplitWidth;
+			ResourceKey<Level> dim = ResourceKey.create(Registries.DIMENSION, Identifier.parse(dimension));
+			VolumeMark mark = new VolumeMark(a, b, away, length, dim);
+			MarkManager.clearVolumeCorners();
+			MarkManager.clearVolumePlans();
+			MarkManager.addVolumePlan(VolumeMapper.map(client.level, mark, Math.max(2, Math.min(64, splitWidth))));
+			Persistence.save();
+		} catch (Exception e) {
+			JHenry.LOGGER.error("JHenry: bad setVolume request", e);
+		}
+	}
+
+	private static BlockPos readPos(JsonObject object, String prefix) {
+		return new BlockPos(object.get(prefix + "X").getAsInt(), object.get(prefix + "Y").getAsInt(),
+				object.get(prefix + "Z").getAsInt());
+	}
+
+	private static boolean partitionDone(Minecraft client, Partition partition) {
+		if (client.level == null) {
+			return false;
+		}
+		for (BlockPos cell : VolumeMapper.cells(partition)) {
+			if (client.level.isLoaded(cell) && !client.level.getBlockState(cell).isAir()) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static void applyMode(String mode) {		if (mode == null) {
+			return;
+		}
+		try {
+			MiningSettings.setMiningMode(MiningMode.valueOf(mode.toUpperCase(java.util.Locale.ROOT)));
+		} catch (IllegalArgumentException e) {
+			MiningSettings.setMiningMode(MiningMode.TUNNEL);
 		}
 		Persistence.save();
 	}
@@ -407,19 +482,20 @@ public final class ControlServer {
 			}
 			status.add("inventory", inventory);
 		}
-		status.addProperty("digging", TunnelDigger.isRunning());
-		status.addProperty("mode", TunnelDigger.modeName());
+		boolean volumeActive = VolumeDigger.isActive();
+		status.addProperty("digging", TunnelDigger.isRunning() || VolumeDigger.isRunning());
+		status.addProperty("mode", volumeActive ? VolumeDigger.modeName() : TunnelDigger.modeName());
 		status.addProperty("lastAction", BotActions.lastAction());
 		status.addProperty("actionSeq", BotActions.actionSeq());
-		String error = TunnelDigger.lastError();
+		String error = volumeActive ? VolumeDigger.lastError() : TunnelDigger.lastError();
 		status.addProperty("lastError", error == null ? "" : error);
-		status.addProperty("blocksMined", TunnelDigger.blocksMined());
-		status.addProperty("blocksTotal", TunnelDigger.blocksTotal());
-		BlockPos target = TunnelDigger.currentTarget();
+		status.addProperty("blocksMined", volumeActive ? VolumeDigger.blocksMined() : TunnelDigger.blocksMined());
+		status.addProperty("blocksTotal", volumeActive ? VolumeDigger.blocksTotal() : TunnelDigger.blocksTotal());
+		BlockPos target = volumeActive ? VolumeDigger.currentTarget() : TunnelDigger.currentTarget();
 		status.addProperty("target", target == null ? "" : target.toShortString());
-		status.addProperty("finishedSeq", TunnelDigger.finishedSeq());
-		BlockPos finished = TunnelDigger.finishedEntrance();
-		ResourceKey<Level> finishedDim = TunnelDigger.finishedDimension();
+		status.addProperty("finishedSeq", volumeActive ? VolumeDigger.finishedSeq() : TunnelDigger.finishedSeq());
+		BlockPos finished = volumeActive ? VolumeDigger.finishedPartitionStart() : TunnelDigger.finishedEntrance();
+		ResourceKey<Level> finishedDim = volumeActive ? VolumeDigger.finishedDimension() : TunnelDigger.finishedDimension();
 		if (finished != null && finishedDim != null) {
 			status.addProperty("finishedX", finished.getX());
 			status.addProperty("finishedY", finished.getY());
@@ -438,9 +514,55 @@ public final class ControlServer {
 		status.addProperty("handleGravel", MarkManager.config().handleGravel);
 		status.addProperty("maxBlocks", MarkManager.config().maxBlocks);
 		status.addProperty("maxBlocksOverride", MarkManager.config().maxBlocksOverride);
+		status.addProperty("volumeLength", MarkManager.config().volumeLength);
+		status.addProperty("volumeLengthOverride", MarkManager.config().volumeLengthOverride);
+		status.addProperty("volumeSplitWidth", MarkManager.config().volumeSplitWidth);
+		status.addProperty("volumeId", VolumeDigger.volumeId() == null ? "" : VolumeDigger.volumeId());
+		status.addProperty("partitionIndex", VolumeDigger.partitionIndex());
+		VolumePlan volume = MarkManager.volumePlans().isEmpty() ? null : MarkManager.volumePlans().get(0);
+		if (volume != null) {
+			JsonObject volumeJson = new JsonObject();
+			volumeJson.addProperty("id", BotActions.volumeId(volume));
+			volumeJson.addProperty("dimension", volume.mark().dimension().identifier().toString());
+			volumeJson.addProperty("away", volume.mark().away().name());
+			volumeJson.addProperty("length", volume.mark().length());
+			volumeJson.addProperty("splitWidth", MarkManager.config().volumeSplitWidth);
+			volumeJson.addProperty("aX", volume.mark().a().getX());
+			volumeJson.addProperty("aY", volume.mark().a().getY());
+			volumeJson.addProperty("aZ", volume.mark().a().getZ());
+			volumeJson.addProperty("bX", volume.mark().b().getX());
+			volumeJson.addProperty("bY", volume.mark().b().getY());
+			volumeJson.addProperty("bZ", volume.mark().b().getZ());
+			volumeJson.addProperty("width", volume.width());
+			volumeJson.addProperty("height", volume.height());
+			volumeJson.addProperty("length", volume.length());
+			JsonArray partitions = new JsonArray();
+			for (Partition partition : volume.partitions()) {
+				JsonObject partitionJson = new JsonObject();
+				partitionJson.addProperty("index", partition.index());
+				partitionJson.addProperty("layer", partition.layer());
+				partitionJson.addProperty("pattern", partition.pattern().name());
+				partitionJson.addProperty("half", partition.half().name());
+				partitionJson.addProperty("away", partition.away().name());
+				partitionJson.addProperty("minX", partition.min().getX());
+				partitionJson.addProperty("minY", partition.min().getY());
+				partitionJson.addProperty("minZ", partition.min().getZ());
+				partitionJson.addProperty("maxX", partition.max().getX());
+				partitionJson.addProperty("maxY", partition.max().getY());
+				partitionJson.addProperty("maxZ", partition.max().getZ());
+				partitionJson.addProperty("startX", partition.start().getX());
+				partitionJson.addProperty("startY", partition.start().getY());
+				partitionJson.addProperty("startZ", partition.start().getZ());
+				partitionJson.addProperty("done", partitionDone(client, partition));
+				partitions.add(partitionJson);
+			}
+			volumeJson.add("partitions", partitions);
+			status.add("volume", volumeJson);
+		}
 		status.addProperty("autoTool", MiningSettings.autoTool());
 		status.addProperty("peek", MiningSettings.peek());
 		status.addProperty("pauseOnDamage", MiningSettings.pauseOnDamage());
+		status.addProperty("miningMode", MiningSettings.miningMode().name());
 		JsonArray ores = new JsonArray();
 		for (Block block : OreFilter.enabled()) {
 			ores.add(OreFilter.idOf(block).toString());

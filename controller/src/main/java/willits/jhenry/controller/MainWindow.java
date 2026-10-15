@@ -38,6 +38,8 @@ public final class MainWindow extends JFrame {
 	private final Map<BotConfig, Long> lastSeq = new HashMap<>();
 	private final Map<BotConfig, Long> lastFinishedSeq = new HashMap<>();
 	private final Map<BotConfig, Long> lastSettingsPush = new HashMap<>();
+	private final Map<BotConfig, Long> lastModePush = new HashMap<>();
+	private final Map<BotConfig, Long> lastVolumePush = new HashMap<>();
 
 	private final JPanel cardGrid = new JPanel();
 	private JPanel oreGridPanel;
@@ -95,6 +97,7 @@ public final class MainWindow extends JFrame {
 		panel.add(Box.createVerticalStrut(12));
 		panel.add(side("Refresh", this::poll));
 		panel.add(side("Settings", () -> SettingsWindow.open(this)));
+		panel.add(side("Volume", () -> VolumePanel.open(this)));
 		panel.add(Box.createVerticalStrut(12));
 
 		JLabel oresLabel = new JLabel("Ores");
@@ -139,10 +142,12 @@ public final class MainWindow extends JFrame {
 		boolean peek = GlobalConfig.peek();
 		boolean pauseOnDamage = GlobalConfig.pauseOnDamage();
 		int maxBlocks = GlobalConfig.maxBlocks();
+		int volumeLength = GlobalConfig.volumeLength();
+		int volumeSplitWidth = GlobalConfig.volumeSplitWidth();
 		List<String> scaffolds = ScaffoldConfig.enabled();
 		for (BotConfig bot : bots) {
 			new Thread(() -> new BotClient(bot).sendSettings(autoMine, handleGravel, autoTool, peek, pauseOnDamage,
-					maxBlocks, scaffolds), "jhenry-settings").start();
+					maxBlocks, volumeLength, volumeSplitWidth, scaffolds), "jhenry-settings").start();
 		}
 	}
 
@@ -156,12 +161,20 @@ public final class MainWindow extends JFrame {
 				|| status.peek() != GlobalConfig.peek()
 				|| status.pauseOnDamage() != GlobalConfig.pauseOnDamage()
 				|| (!status.maxBlocksOverride() && status.maxBlocks() != GlobalConfig.maxBlocks())
+				|| (!status.volumeLengthOverride() && status.volumeLength() != GlobalConfig.volumeLength())
+				|| status.volumeSplitWidth() != GlobalConfig.volumeSplitWidth()
 				|| !new HashSet<>(status.ores()).equals(new HashSet<>(OreConfig.enabled()))
 				|| !new HashSet<>(status.scaffolds()).equals(new HashSet<>(ScaffoldConfig.enabled()));
 	}
 
-	private void rebuildCards() {
-		cardGrid.removeAll();
+	private boolean modeMismatch(BotConfig bot, BotStatus status) {
+		if (status.miningMode() == null || status.miningMode().isEmpty()) {
+			return false;
+		}
+		return !status.miningMode().equals(ModeConfig.get(bot));
+	}
+
+	private void rebuildCards() {		cardGrid.removeAll();
 		cardGrid.setLayout(new BoxLayout(cardGrid, BoxLayout.Y_AXIS));
 		cards.clear();
 
@@ -233,16 +246,24 @@ public final class MainWindow extends JFrame {
 				handleTransitions(card, previous, status);
 				if ((previous == null || !previous.online()) && status.online()) {
 					new Thread(() -> new BotClient(bot).sendFilter(OreConfig.enabled()), "jhenry-filter").start();
-					new Thread(() -> new BotClient(bot).sendSettings(ScaffoldConfig.autoMine(), ScaffoldConfig.handleGravel(), GlobalConfig.autoTool(), GlobalConfig.peek(), GlobalConfig.pauseOnDamage(), GlobalConfig.maxBlocks(),
+					new Thread(() -> new BotClient(bot).sendSettings(ScaffoldConfig.autoMine(), ScaffoldConfig.handleGravel(), GlobalConfig.autoTool(), GlobalConfig.peek(), GlobalConfig.pauseOnDamage(), GlobalConfig.maxBlocks(), GlobalConfig.volumeLength(), GlobalConfig.volumeSplitWidth(),
 							ScaffoldConfig.enabled()), "jhenry-settings").start();
+					new Thread(() -> new BotClient(bot).sendMode(ModeConfig.get(bot)), "jhenry-mode").start();
 					BlockIds.fetchAsync(bots);
 				} else if (status.online() && settingsMismatch(status)) {
 					long now = System.currentTimeMillis();
 					if (now - lastSettingsPush.getOrDefault(bot, 0L) > 5000L) {
 						lastSettingsPush.put(bot, now);
 						new Thread(() -> new BotClient(bot).sendFilter(OreConfig.enabled()), "jhenry-filter").start();
-						new Thread(() -> new BotClient(bot).sendSettings(ScaffoldConfig.autoMine(), ScaffoldConfig.handleGravel(), GlobalConfig.autoTool(), GlobalConfig.peek(), GlobalConfig.pauseOnDamage(), GlobalConfig.maxBlocks(),
+						new Thread(() -> new BotClient(bot).sendSettings(ScaffoldConfig.autoMine(), ScaffoldConfig.handleGravel(), GlobalConfig.autoTool(), GlobalConfig.peek(), GlobalConfig.pauseOnDamage(), GlobalConfig.maxBlocks(), GlobalConfig.volumeLength(), GlobalConfig.volumeSplitWidth(),
 								ScaffoldConfig.enabled()), "jhenry-settings").start();
+					}
+				}
+				if (status.online() && modeMismatch(bot, status)) {
+					long now = System.currentTimeMillis();
+					if (now - lastModePush.getOrDefault(bot, 0L) > 5000L) {
+						lastModePush.put(bot, now);
+						new Thread(() -> new BotClient(bot).sendMode(ModeConfig.get(bot)), "jhenry-mode").start();
 					}
 				}
 				handleAction(card, bot, status);
@@ -255,6 +276,40 @@ public final class MainWindow extends JFrame {
 			}
 		}
 		statusBar.setText("  " + online + "/" + bots.size() + " online");
+		autoPushVolume();
+	}
+
+	private void autoPushVolume() {
+		synchronized (statuses) {
+			VolumeStatus volume = null;
+			for (int i = 0; i < bots.size() && i < statuses.size(); i++) {
+				if (statuses.get(i).volume() != null) {
+					volume = statuses.get(i).volume();
+					break;
+				}
+			}
+			if (volume == null) {
+				return;
+			}
+			final VolumeStatus target = volume;
+			for (int i = 0; i < bots.size() && i < statuses.size(); i++) {
+				BotConfig bot = bots.get(i);
+				BotStatus status = statuses.get(i);
+				if (!status.online() || !"VOLUME".equals(status.miningMode())) {
+					continue;
+				}
+				if (status.volume() != null && target.id() != null
+						&& target.id().equals(status.volume().id())) {
+					continue;
+				}
+				long now = System.currentTimeMillis();
+				if (now - lastVolumePush.getOrDefault(bot, 0L) < 5000L) {
+					continue;
+				}
+				lastVolumePush.put(bot, now);
+				new Thread(() -> new BotClient(bot).sendSetVolume(target), "jhenry-volume").start();
+			}
+		}
 	}
 
 	private void handleAction(BotCard card, BotConfig bot, BotStatus status) {
@@ -353,6 +408,33 @@ public final class MainWindow extends JFrame {
 		}).start();
 	}
 
+	public List<BotConfig> botList() {
+		return new ArrayList<>(bots);
+	}
+
+	public void pushVolume(VolumeStatus volume) {
+		SoundPlayer.play("click");
+		List<BotConfig> targets = new ArrayList<>(bots);
+		new Thread(() -> {
+			for (BotConfig bot : targets) {
+				boolean ok = new BotClient(bot).sendSetVolume(volume);
+				SwingUtilities.invokeLater(() -> cardFor(bot)
+						.ifPresent(card -> card.logLine((ok ? "OK   " : "FAIL ") + "volume pushed")));
+			}
+		}).start();
+	}
+
+	public void setMode(BotConfig bot, String mode) {		String normalized = ModeConfig.VOLUME.equals(mode) ? ModeConfig.VOLUME : ModeConfig.TUNNEL;
+		ModeConfig.set(bot, normalized);
+		lastModePush.put(bot, System.currentTimeMillis());
+		SoundPlayer.play("click");
+		new Thread(() -> {
+			boolean ok = new BotClient(bot).sendMode(normalized);
+			SwingUtilities.invokeLater(() -> cardFor(bot)
+					.ifPresent(card -> card.logLine((ok ? "OK   " : "FAIL ") + "mode " + normalized)));
+		}).start();
+	}
+
 	public void focus(BotConfig bot) {
 		SoundPlayer.play("click");
 		BotStatus status = statusFor(bot);
@@ -373,7 +455,7 @@ public final class MainWindow extends JFrame {
 		}
 	}
 
-	private BotStatus statusFor(BotConfig bot) {
+	public BotStatus statusFor(BotConfig bot) {
 		int index = bots.indexOf(bot);
 		if (index < 0 || index >= statuses.size()) {
 			return BotStatus.offline();
@@ -462,6 +544,7 @@ public final class MainWindow extends JFrame {
 		lastStatus.remove(bot);
 		lastSeq.remove(bot);
 		lastFinishedSeq.remove(bot);
+		ModeConfig.remove(bot);
 		BotRegistry.save(bots);
 		rebuildCards();
 	}

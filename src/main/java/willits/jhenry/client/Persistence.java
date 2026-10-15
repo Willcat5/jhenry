@@ -22,6 +22,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import willits.jhenry.JHenry;
 import willits.jhenry.mapping.MarkManager;
+import willits.jhenry.mapping.MiningMode;
 import willits.jhenry.mapping.MiningSettings;
 import willits.jhenry.mapping.OreFilter;
 import willits.jhenry.mapping.PlannedCell;
@@ -43,6 +44,8 @@ public final class Persistence {
 		loadedUuid = uuid;
 		MarkManager.clearMarks();
 		MarkManager.clearPlans();
+		MarkManager.clearVolumeCorners();
+		MarkManager.clearVolumePlans();
 
 		Path file = fileFor(uuid);
 		if (!Files.exists(file)) {
@@ -98,6 +101,15 @@ public final class Persistence {
 			if (root.has("maxBlocksOverride")) {
 				MarkManager.config().maxBlocksOverride = root.get("maxBlocksOverride").getAsBoolean();
 			}
+			if (root.has("volumeLength")) {
+				MarkManager.config().volumeLength = Math.max(1, Math.min(64, root.get("volumeLength").getAsInt()));
+			}
+			if (root.has("volumeLengthOverride")) {
+				MarkManager.config().volumeLengthOverride = root.get("volumeLengthOverride").getAsBoolean();
+			}
+			if (root.has("volumeSplitWidth")) {
+				MarkManager.config().volumeSplitWidth = Math.max(2, Math.min(64, root.get("volumeSplitWidth").getAsInt()));
+			}
 			if (root.has("autoTool")) {
 				MiningSettings.setAutoTool(root.get("autoTool").getAsBoolean());
 			}
@@ -106,6 +118,13 @@ public final class Persistence {
 			}
 			if (root.has("pauseOnDamage")) {
 				MiningSettings.setPauseOnDamage(root.get("pauseOnDamage").getAsBoolean());
+			}
+			if (root.has("miningMode")) {
+				try {
+					MiningSettings.setMiningMode(MiningMode.valueOf(root.get("miningMode").getAsString()));
+				} catch (IllegalArgumentException e) {
+					MiningSettings.setMiningMode(MiningMode.TUNNEL);
+				}
 			}
 		} catch (Exception e) {
 			JHenry.LOGGER.error("JHenry: failed to load data for {}", uuid, e);
@@ -147,9 +166,13 @@ public final class Persistence {
 			root.addProperty("autoMine", MiningSettings.autoMineOres());
 			root.addProperty("maxBlocks", MarkManager.config().maxBlocks);
 			root.addProperty("maxBlocksOverride", MarkManager.config().maxBlocksOverride);
+			root.addProperty("volumeLength", MarkManager.config().volumeLength);
+			root.addProperty("volumeLengthOverride", MarkManager.config().volumeLengthOverride);
+			root.addProperty("volumeSplitWidth", MarkManager.config().volumeSplitWidth);
 			root.addProperty("autoTool", MiningSettings.autoTool());
 			root.addProperty("peek", MiningSettings.peek());
 			root.addProperty("pauseOnDamage", MiningSettings.pauseOnDamage());
+			root.addProperty("miningMode", MiningSettings.miningMode().name());
 
 			try (Writer writer = Files.newBufferedWriter(file)) {
 				GSON.toJson(root, writer);

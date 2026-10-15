@@ -9,6 +9,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.ChatScreen;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
@@ -23,11 +24,15 @@ import willits.jhenry.bot.ControlServer;
 import willits.jhenry.client.dig.BlockBreaker;
 import willits.jhenry.client.dig.MoveController;
 import willits.jhenry.client.dig.TunnelDigger;
+import willits.jhenry.client.dig.VolumeDigger;
 import willits.jhenry.client.gui.JHenryScreen;
 import willits.jhenry.client.look.LookController;
 import willits.jhenry.client.render.PlanRenderer;
 import willits.jhenry.mapping.MarkManager;
+import willits.jhenry.mapping.MiningMode;
+import willits.jhenry.mapping.MiningSettings;
 import willits.jhenry.mapping.TunnelMark;
+import willits.jhenry.mapping.VolumePartitioner;
 
 public class JHenryClient implements ClientModInitializer {
 
@@ -36,6 +41,7 @@ public class JHenryClient implements ClientModInitializer {
 	public static KeyMapping breakKey;
 	public static KeyMapping stepKey;
 	public static KeyMapping digKey;
+	public static KeyMapping pauseKey;
 	public static KeyMapping resumeKey;
 	public static KeyMapping minimizeKey;
 
@@ -51,6 +57,7 @@ public class JHenryClient implements ClientModInitializer {
 		breakKey = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.jhenry.break", GLFW.GLFW_KEY_B, category));
 		stepKey = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.jhenry.step", GLFW.GLFW_KEY_N, category));
 		digKey = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.jhenry.dig", GLFW.GLFW_KEY_G, category));
+		pauseKey = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.jhenry.pause", GLFW.GLFW_KEY_P, category));
 		resumeKey = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.jhenry.resume", GLFW.GLFW_KEY_R, category));
 		minimizeKey = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.jhenry.minimize", GLFW.GLFW_KEY_H, category));
 
@@ -103,14 +110,18 @@ public class JHenryClient implements ClientModInitializer {
 				}
 			}
 			while (digKey.consumeClick()) {
-				if (TunnelDigger.isRunning()) {
+				if (TunnelDigger.isRunning() || VolumeDigger.isRunning()) {
 					TunnelDigger.stop();
+					VolumeDigger.stop();
 				} else {
 					digPlan();
 				}
 			}
 			while (resumeKey.consumeClick()) {
-				TunnelDigger.resume();
+				BotActions.resume();
+			}
+			while (pauseKey.consumeClick()) {
+				BotActions.pause();
 			}
 			while (minimizeKey.consumeClick()) {
 				GLFW.glfwIconifyWindow(client.getWindow().handle());
@@ -123,16 +134,42 @@ public class JHenryClient implements ClientModInitializer {
 				BlockBreaker.tick();
 				MoveController.tick();
 				TunnelDigger.tick();
+				VolumeDigger.tick();
+				updateVolumeHud(client);
 			}
 		});
 
 		WorldRenderEvents.AFTER_ENTITIES.register(PlanRenderer::render);
 	}
 
+	private static void updateVolumeHud(Minecraft client) {
+		if (MiningSettings.miningMode() != MiningMode.VOLUME) {
+			return;
+		}
+		LocalPlayer player = client.player;
+		if (player == null || client.level == null) {
+			return;
+		}
+		if (MarkManager.volumeCorners().size() != 1) {
+			return;
+		}
+		if (client.hitResult == null || client.hitResult.getType() != HitResult.Type.BLOCK) {
+			return;
+		}
+
+		BlockPos corner = MarkManager.volumeCorners().get(0);
+		BlockPos looking = ((BlockHitResult) client.hitResult).getBlockPos();
+		Direction away = player.getDirection();
+		int width = VolumePartitioner.widthBetween(corner, looking, away);
+		int height = VolumePartitioner.heightBetween(corner, looking);
+		int length = MarkManager.config().volumeLength;
+		player.displayClientMessage(Component.literal(
+				"JHenry volume: " + width + "w x " + height + "h x " + length + "l"), true);
+	}
+
 	public static void digPlan() {
 		BotActions.dig();
 	}
-
 	public static void stepForward(Minecraft client) {
 		if (client.player == null) {
 			return;
@@ -154,6 +191,20 @@ public class JHenryClient implements ClientModInitializer {
 		}
 
 		BlockPos pos = ((BlockHitResult) client.hitResult).getBlockPos();
+
+		if (MiningSettings.miningMode() == MiningMode.VOLUME) {
+			if (MarkManager.volumeCorners().size() >= 2) {
+				MarkManager.clearVolumeCorners();
+			}
+			MarkManager.addVolumeCorner(pos.immutable());
+			if (client.player != null) {
+				client.player.displayClientMessage(
+						Component.literal("JHenry: volume corner " + MarkManager.volumeCorners().size()
+								+ "/2 @ " + pos.toShortString()), false);
+			}
+			return;
+		}
+
 		BlockState state = client.level.getBlockState(pos);
 		if (!(state.getBlock() instanceof TrapDoorBlock)) {
 			return;

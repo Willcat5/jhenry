@@ -102,7 +102,7 @@ public final class BotClient {
 	}
 
 	public boolean sendSettings(boolean autoMine, boolean handleGravel, boolean autoTool, boolean peek,
-			boolean pauseOnDamage, int maxBlocks, List<String> scaffolds) {
+			boolean pauseOnDamage, int maxBlocks, int volumeLength, int volumeSplitWidth, List<String> scaffolds) {
 		try {
 			JsonObject body = new JsonObject();
 			body.addProperty("action", "settings");
@@ -112,6 +112,8 @@ public final class BotClient {
 			body.addProperty("peek", peek);
 			body.addProperty("pauseOnDamage", pauseOnDamage);
 			body.addProperty("maxBlocks", maxBlocks);
+			body.addProperty("volumeLength", volumeLength);
+			body.addProperty("volumeSplitWidth", volumeSplitWidth);
 			JsonArray array = new JsonArray();
 			for (String id : scaffolds) {
 				array.add(id);
@@ -131,8 +133,53 @@ public final class BotClient {
 		}
 	}
 
-	public boolean sendClear(int x, int y, int z, String dimension) {
+	public boolean sendSetVolume(VolumeStatus volume) {
 		try {
+			JsonObject body = new JsonObject();
+			body.addProperty("action", "setVolume");
+			body.addProperty("dimension", volume.dimension());
+			body.addProperty("away", volume.away());
+			body.addProperty("length", volume.length());
+			body.addProperty("splitWidth", volume.splitWidth());
+			body.addProperty("aX", volume.aX());
+			body.addProperty("aY", volume.aY());
+			body.addProperty("aZ", volume.aZ());
+			body.addProperty("bX", volume.bX());
+			body.addProperty("bY", volume.bY());
+			body.addProperty("bZ", volume.bZ());
+			HttpRequest request = HttpRequest.newBuilder()
+					.uri(URI.create(base() + "/command"))
+					.timeout(Duration.ofSeconds(3))
+					.header("X-JHenry-Token", config.token())
+					.header("Content-Type", "application/json")
+					.POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+					.build();
+			HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+			return response.statusCode() == 200;
+		} catch (Exception e) {
+			return false;
+		}
+	}
+
+	public boolean sendMode(String mode) {		try {
+			JsonObject body = new JsonObject();
+			body.addProperty("action", "mode");
+			body.addProperty("mode", mode);
+			HttpRequest request = HttpRequest.newBuilder()
+					.uri(URI.create(base() + "/command"))
+					.timeout(Duration.ofSeconds(3))
+					.header("X-JHenry-Token", config.token())
+					.header("Content-Type", "application/json")
+					.POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+					.build();
+			HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+			return response.statusCode() == 200;
+		} catch (Exception e) {
+			return false;
+		}
+	}
+
+	public boolean sendClear(int x, int y, int z, String dimension) {		try {
 			JsonObject body = new JsonObject();
 			body.addProperty("action", "clear");
 			body.addProperty("x", x);

@@ -1674,6 +1674,12 @@ public final class TunnelDigger {
 		return mode == Mode.RUNNING;
 	}
 
+	public static void pauseForUser() {
+		if (mode == Mode.RUNNING) {
+			pause("paused");
+		}
+	}
+
 	public static void notifyDamage() {
 		if (!MiningSettings.pauseOnDamage()) {
 			return;

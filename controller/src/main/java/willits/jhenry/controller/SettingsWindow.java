@@ -87,6 +87,40 @@ public final class SettingsWindow {
 
 		panel.add(Box.createVerticalStrut(10));
 
+		JLabel lengthLabel = new JLabel("Volume Length: " + GlobalConfig.volumeLength());
+		lengthLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		panel.add(lengthLabel);
+		JSlider length = slider(1, 64, GlobalConfig.volumeLength());
+		length.addChangeListener(e -> lengthLabel.setText("Volume Length: " + length.getValue()));
+		length.addMouseListener(new MouseAdapter() {
+			@Override
+			public void mouseReleased(MouseEvent e) {
+				GlobalConfig.setVolumeLength(length.getValue());
+				lengthLabel.setText("Volume Length: " + GlobalConfig.volumeLength());
+				owner.pushSettings();
+			}
+		});
+		panel.add(length);
+
+		panel.add(Box.createVerticalStrut(10));
+
+		JLabel splitLabel = new JLabel("Split Width: " + GlobalConfig.volumeSplitWidth());
+		splitLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		panel.add(splitLabel);
+		JSlider split = slider(2, 32, GlobalConfig.volumeSplitWidth());
+		split.addChangeListener(e -> splitLabel.setText("Split Width: " + split.getValue()));
+		split.addMouseListener(new MouseAdapter() {
+			@Override
+			public void mouseReleased(MouseEvent e) {
+				GlobalConfig.setVolumeSplitWidth(split.getValue());
+				splitLabel.setText("Split Width: " + GlobalConfig.volumeSplitWidth());
+				owner.pushSettings();
+			}
+		});
+		panel.add(split);
+
+		panel.add(Box.createVerticalStrut(10));
+
 		JLabel volumeLabel = new JLabel("Volume: " + GlobalConfig.soundVolume());
 		volumeLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 		panel.add(volumeLabel);
