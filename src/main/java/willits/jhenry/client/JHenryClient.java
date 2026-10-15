@@ -4,8 +4,8 @@ import org.lwjgl.glfw.GLFW;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.ChatScreen;
@@ -52,14 +52,14 @@ public class JHenryClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		KeyMapping.Category category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath(JHenry.MOD_ID, "main"));
-		openPanelKey = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.jhenry.panel", GLFW.GLFW_KEY_J, category));
-		markTrapdoorKey = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.jhenry.mark", GLFW.GLFW_KEY_M, category));
-		breakKey = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.jhenry.break", GLFW.GLFW_KEY_B, category));
-		stepKey = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.jhenry.step", GLFW.GLFW_KEY_N, category));
-		digKey = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.jhenry.dig", GLFW.GLFW_KEY_G, category));
-		pauseKey = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.jhenry.pause", GLFW.GLFW_KEY_P, category));
-		resumeKey = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.jhenry.resume", GLFW.GLFW_KEY_R, category));
-		minimizeKey = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.jhenry.minimize", GLFW.GLFW_KEY_H, category));
+		openPanelKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.jhenry.panel", GLFW.GLFW_KEY_J, category));
+		markTrapdoorKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.jhenry.mark", GLFW.GLFW_KEY_M, category));
+		breakKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.jhenry.break", GLFW.GLFW_KEY_B, category));
+		stepKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.jhenry.step", GLFW.GLFW_KEY_N, category));
+		digKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.jhenry.dig", GLFW.GLFW_KEY_G, category));
+		pauseKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.jhenry.pause", GLFW.GLFW_KEY_P, category));
+		resumeKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.jhenry.resume", GLFW.GLFW_KEY_R, category));
+		minimizeKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.jhenry.minimize", GLFW.GLFW_KEY_H, category));
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			client.options.pauseOnLostFocus = false;
@@ -90,7 +90,7 @@ public class JHenryClient implements ClientModInitializer {
 			}
 
 			while (openPanelKey.consumeClick()) {
-				client.setScreen(new JHenryScreen());
+				client.setScreenAndShow(new JHenryScreen());
 			}
 			while (markTrapdoorKey.consumeClick()) {
 				markLookedAt(client);
@@ -127,8 +127,8 @@ public class JHenryClient implements ClientModInitializer {
 				GLFW.glfwIconifyWindow(client.getWindow().handle());
 			}
 
-			boolean paused = client.screen != null
-					&& (client.screen.isPauseScreen() || client.screen instanceof ChatScreen);
+			boolean paused = client.gui.screen() != null
+					&& (client.gui.screen().isPauseScreen() || client.gui.screen() instanceof ChatScreen);
 			if (!paused) {
 				LookController.tick();
 				BlockBreaker.tick();
@@ -139,7 +139,7 @@ public class JHenryClient implements ClientModInitializer {
 			}
 		});
 
-		WorldRenderEvents.AFTER_ENTITIES.register(PlanRenderer::render);
+		LevelRenderEvents.BEFORE_GIZMOS.register(PlanRenderer::render);
 	}
 
 	private static void updateVolumeHud(Minecraft client) {
@@ -163,8 +163,8 @@ public class JHenryClient implements ClientModInitializer {
 		int width = VolumePartitioner.widthBetween(corner, looking, away);
 		int height = VolumePartitioner.heightBetween(corner, looking);
 		int length = MarkManager.config().volumeLength;
-		player.displayClientMessage(Component.literal(
-				"JHenry volume: " + width + "w x " + height + "h x " + length + "l"), true);
+		player.sendOverlayMessage(Component.literal(
+				"JHenry volume: " + width + "w x " + height + "h x " + length + "l"));
 	}
 
 	public static void digPlan() {
@@ -198,9 +198,8 @@ public class JHenryClient implements ClientModInitializer {
 			}
 			MarkManager.addVolumeCorner(pos.immutable());
 			if (client.player != null) {
-				client.player.displayClientMessage(
-						Component.literal("JHenry: volume corner " + MarkManager.volumeCorners().size()
-								+ "/2 @ " + pos.toShortString()), false);
+				client.player.sendSystemMessage(Component.literal("JHenry: volume corner "
+						+ MarkManager.volumeCorners().size() + "/2 @ " + pos.toShortString()));
 			}
 			return;
 		}
@@ -218,8 +217,8 @@ public class JHenryClient implements ClientModInitializer {
 			MarkManager.addMark(mark);
 			Persistence.save();
 			if (client.player != null) {
-				client.player.displayClientMessage(
-						Component.literal("JHenry: marked trapdoor at " + pos.toShortString()), false);
+				client.player.sendSystemMessage(
+						Component.literal("JHenry: marked trapdoor at " + pos.toShortString()));
 			}
 		}
 	}

@@ -16,7 +16,7 @@ import io.wispforest.owo.ui.core.Surface;
 import io.wispforest.owo.ui.core.UIComponent;
 import io.wispforest.owo.ui.core.VerticalAlignment;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import org.joml.Matrix3x2fStack;
@@ -247,13 +247,13 @@ public class JHenryScreen extends BaseOwoScreen<FlowLayout> {
 	}
 
 	@Override
-	public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+	public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
 		graphics.fill(0, 0, width, height, ROOT_DIM);
 		float scale = uiScale();
 		Matrix3x2fStack pose = graphics.pose();
 		pose.pushMatrix();
 		pose.scale(scale, scale);
-		super.render(graphics, (int) toLocal(mouseX), (int) toLocal(mouseY), partialTick);
+		super.extractRenderState(graphics, (int) toLocal(mouseX), (int) toLocal(mouseY), partialTick);
 		pose.popMatrix();
 	}
 

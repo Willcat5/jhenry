@@ -67,25 +67,25 @@ public final class BotActions {
 			if (plan.blockCount() == 0) {
 				MarkManager.removeMark(mark);
 				discarded++;
-				player.displayClientMessage(Component.literal(
+				player.sendSystemMessage(Component.literal(
 						"JHenry: discarded mark @ " + mark.entrance().toShortString()
-								+ " (no mineable blocks)"), false);
+								+ " (no mineable blocks)"));
 				continue;
 			}
 			MarkManager.addPlan(plan);
 			totalBlocks += plan.blockCount();
-			player.displayClientMessage(Component.literal(
+			player.sendSystemMessage(Component.literal(
 					"Tunnel @ " + mark.entrance().toShortString()
 							+ " dir=" + plan.direction()
 							+ " len=" + plan.length()
 							+ " blocks=" + plan.blockCount()
 							+ " stop=" + plan.stopReason().label()
-							+ " [" + plan.detail() + "]"), false);
+							+ " [" + plan.detail() + "]"));
 		}
 
-		player.displayClientMessage(Component.literal(
+		player.sendSystemMessage(Component.literal(
 				"JHenry: mapped " + MarkManager.plans().size() + " tunnel(s), " + totalBlocks + " blocks total"
-						+ (discarded > 0 ? " (" + discarded + " discarded)" : "")), false);
+						+ (discarded > 0 ? " (" + discarded + " discarded)" : "")));
 		record("map");
 		Persistence.save();
 	}
@@ -99,7 +99,7 @@ public final class BotActions {
 
 		java.util.List<BlockPos> corners = MarkManager.volumeCorners();
 		if (corners.size() < 2) {
-			player.displayClientMessage(Component.literal("JHenry: mark 2 volume corners first"), false);
+			player.sendSystemMessage(Component.literal("JHenry: mark 2 volume corners first"));
 			return;
 		}
 
@@ -109,8 +109,8 @@ public final class BotActions {
 				MarkManager.config().volumeLength, client.level.dimension());
 		VolumePlan plan = VolumeMapper.map(client.level, mark, MarkManager.config());
 		MarkManager.addVolumePlan(plan);
-		player.displayClientMessage(Component.literal(
-				"JHenry: volume " + plan.detail() + " away=" + away), false);
+		player.sendSystemMessage(Component.literal(
+				"JHenry: volume " + plan.detail() + " away=" + away));
 	}
 
 	public static void dig() {		Minecraft client = Minecraft.getInstance();
@@ -139,7 +139,7 @@ public final class BotActions {
 		}
 
 		if (match == null) {
-			player.displayClientMessage(Component.literal("JHenry: no plan starts here"), false);
+			player.sendSystemMessage(Component.literal("JHenry: no plan starts here"));
 			return;
 		}
 		TunnelDigger.start(match);
@@ -170,7 +170,7 @@ public final class BotActions {
 		}
 
 		if (candidates.isEmpty()) {
-			player.displayClientMessage(Component.literal("JHenry: no partition starts here"), false);
+			player.sendSystemMessage(Component.literal("JHenry: no partition starts here"));
 			return;
 		}
 

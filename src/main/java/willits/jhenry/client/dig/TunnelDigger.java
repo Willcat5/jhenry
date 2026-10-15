@@ -17,7 +17,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.player.Inventory;
-import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
@@ -1458,8 +1458,8 @@ public final class TunnelDigger {
 		if (target < 0) {
 			return;
 		}
-		client.gameMode.handleInventoryMouseClick(player.inventoryMenu.containerId, source, target,
-				ClickType.SWAP, player);
+		client.gameMode.handleContainerInput(player.inventoryMenu.containerId, source, target,
+				ContainerInput.SWAP, player);
 		placementRefillPending = true;
 	}
 
@@ -1621,7 +1621,7 @@ public final class TunnelDigger {
 	private static void message(String text) {
 		LocalPlayer player = Minecraft.getInstance().player;
 		if (player != null) {
-			player.displayClientMessage(Component.literal(text), false);
+			player.sendSystemMessage(Component.literal(text));
 		}
 	}
 

@@ -442,9 +442,9 @@ public final class ControlServer {
 
 		LocalPlayer player = Minecraft.getInstance().player;
 		if (player != null) {
-			player.displayClientMessage(
+			player.sendSystemMessage(
 					Component.literal("JHenry: tunnel @ " + entrance.toShortString()
-							+ " finished by another bot, cleared"), false);
+							+ " finished by another bot, cleared"));
 		}
 	}
 

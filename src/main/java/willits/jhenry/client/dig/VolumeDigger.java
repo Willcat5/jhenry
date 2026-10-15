@@ -451,7 +451,7 @@ public final class VolumeDigger {
 	private static void message(String text) {
 		LocalPlayer player = Minecraft.getInstance().player;
 		if (player != null) {
-			player.displayClientMessage(Component.literal(text), false);
+			player.sendSystemMessage(Component.literal(text));
 		}
 	}
 
