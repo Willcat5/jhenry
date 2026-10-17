@@ -54,8 +54,8 @@ public class JHenryClient implements ClientModInitializer {
 		KeyMapping.Category category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath(JHenry.MOD_ID, "main"));
 		openPanelKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.jhenry.panel", GLFW.GLFW_KEY_J, category));
 		markTrapdoorKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.jhenry.mark", GLFW.GLFW_KEY_M, category));
-		breakKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.jhenry.break", GLFW.GLFW_KEY_B, category));
-		stepKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.jhenry.step", GLFW.GLFW_KEY_N, category));
+		breakKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.jhenry.break", GLFW.GLFW_KEY_UNKNOWN, category));
+		stepKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.jhenry.step", GLFW.GLFW_KEY_UNKNOWN, category));
 		digKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.jhenry.dig", GLFW.GLFW_KEY_G, category));
 		pauseKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.jhenry.pause", GLFW.GLFW_KEY_P, category));
 		resumeKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.jhenry.resume", GLFW.GLFW_KEY_R, category));

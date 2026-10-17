@@ -29,7 +29,7 @@ public final class VolumeDigger {
 	private static final float FACE_TOLERANCE = 5.0F;
 	private static final float AIM_LERP = 0.35F;
 	private static final float FLOOR_PITCH = 30.0F;
-	private static final float UP_PITCH = -90.0F;
+	private static final float UP_PITCH = -89.9F;
 	private static final int MINE_CHECK_INTERVAL = 20;
 	private static final int MINE_FAIL_LIMIT = 5;
 	private static final int TOOL_DURABILITY_MIN = 10;
@@ -275,9 +275,14 @@ public final class VolumeDigger {
 		}
 		ToolSelector.hold(player, client.level.getBlockState(cell));
 		aimAt(player, cell);
-		BlockBreaker.holdAttack();
-		if (client.gameMode != null && client.gameMode.isDestroying()) {
-			breakingThisInterval = true;
+		BlockPos hit = hitTarget(client);
+		if (hit != null && hit.equals(cell)) {
+			BlockBreaker.holdAttack();
+			if (client.gameMode != null && client.gameMode.isDestroying()) {
+				breakingThisInterval = true;
+			}
+		} else {
+			BlockBreaker.releaseAttack();
 		}
 		tickStall(player);
 	}

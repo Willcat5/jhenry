@@ -106,6 +106,9 @@ public final class BlockPlacer {
 			if (!state.isSolid() || !state.getFluidState().isEmpty()) {
 				continue;
 			}
+			if (!player.isWithinBlockInteractionRange(neighbor, 0.0D)) {
+				continue;
+			}
 			Vec3 face = closestFacePoint(neighbor, direction, eye);
 			Vec3 toward = face.subtract(eye);
 			if (toward.lengthSqr() < 1.0E-6D) {
